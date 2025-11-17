@@ -1,0 +1,1146 @@
+openapi: 3.0.3
+info:
+  title: Android Browser Automation API
+  description: |
+    REST API для управления системой автоматизации браузеров на Android устройствах.
+    Система позволяет управлять устройствами, создавать задачи, парсить данные с веб-сайтов,
+    проверять домены через Ahrefs API и управлять уникализацией устройств.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+  - url: https://api.example.com/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: Аутентификация и авторизация
+  - name: Devices
+    description: Управление устройствами
+  - name: Tasks
+    description: Управление задачами
+  - name: Proxies
+    description: Управление прокси-серверами
+  - name: Parsed Data
+    description: Просмотр и экспорт спарсенных данных
+  - name: Artifacts
+    description: Управление артефактами (скриншоты)
+  - name: Agent
+    description: API для Android агентов
+
+paths:
+  
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Вход в систему
+      description: Аутентификация пользователя и получение JWT токена
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  format: password
+                  example: password123
+      responses:
+        '200':
+          description: Успешная аутентификация
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT токен для доступа к API
+                  refreshToken:
+                    type: string
+                    description: Refresh токен для обновления access токена
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Обновление токена
+      description: Получение нового access токена используя refresh токен
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Новый токен получен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  
+  /devices:
+    get:
+      tags:
+        - Devices
+      summary: Список устройств
+      description: Получение списка всех зарегистрированных устройств
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [online, offline, busy, error]
+          description: Фильтр по статусу
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Номер страницы
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+          description: Количество записей на странице
+      responses:
+        '200':
+          description: Список устройств
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Devices
+      summary: Регистрация устройства (для агента)
+      description: Регистрация нового устройства в системе
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRegistration'
+      responses:
+        '201':
+          description: Устройство зарегистрировано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /devices/{id}:
+    get:
+      tags:
+        - Devices
+      summary: Информация об устройстве
+      description: Получение детальной информации об устройстве
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Информация об устройстве
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Devices
+      summary: Удаление устройства
+      description: Удаление устройства из системы
+      security:
+        - bearerAuth: []
+        - rbac: [admin]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '204':
+          description: Устройство удалено
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/status:
+    get:
+      tags:
+        - Devices
+      summary: Статус устройства
+      description: Получение текущего статуса устройства
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Статус устройства
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [online, offline, busy, error]
+                  last_heartbeat:
+                    type: string
+                    format: date-time
+                  current_task:
+                    type: object
+                    nullable: true
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      name:
+                        type: string
+
+  
+  /tasks:
+    get:
+      tags:
+        - Tasks
+      summary: Список задач
+      description: Получение списка задач с фильтрацией
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, assigned, running, completed, failed, cancelled]
+          description: Фильтр по статусу
+        - name: device_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Фильтр по устройству
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [surfing, parsing, uniqueness, screenshot]
+          description: Фильтр по типу задачи
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Список задач
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags:
+        - Tasks
+      summary: Создание задачи
+      description: Создание новой задачи для выполнения на устройстве
+      security:
+        - bearerAuth: []
+        - rbac: [admin, operator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: Задача создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /tasks/{id}:
+    get:
+      tags:
+        - Tasks
+      summary: Информация о задаче
+      description: Получение детальной информации о задаче
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Информация о задаче
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Tasks
+      summary: Отмена задачи
+      description: Отмена выполнения задачи
+      security:
+        - bearerAuth: []
+        - rbac: [admin, operator]
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Задача отменена
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/results:
+    get:
+      tags:
+        - Tasks
+      summary: Результаты задачи
+      description: Получение результатов выполнения задачи
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Результаты задачи
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                  result_json:
+                    type: object
+                  parsed_data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ParsedData'
+                  steps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskStep'
+
+  
+  /proxies:
+    get:
+      tags:
+        - Proxies
+      summary: Список прокси
+      description: Получение списка всех прокси-серверов
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список прокси
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Proxy'
+
+    post:
+      tags:
+        - Proxies
+      summary: Добавление прокси
+      description: Добавление нового прокси-сервера
+      security:
+        - bearerAuth: []
+        - rbac: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProxyCreate'
+      responses:
+        '201':
+          description: Прокси добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proxy'
+
+  
+  /parsed-data:
+    get:
+      tags:
+        - Parsed Data
+      summary: Список спарсенных данных
+      description: Получение списка спарсенных данных с фильтрацией
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: task_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Фильтр по задаче
+        - name: ad_domain
+          in: query
+          schema:
+            type: string
+          description: Фильтр по домену рекламодателя
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Начало периода
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Конец периода
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Список данных
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ParsedData'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /parsed-data/export:
+    get:
+      tags:
+        - Parsed Data
+      summary: Экспорт данных
+      description: Экспорт спарсенных данных в CSV или JSON формате
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [csv, json]
+          description: Формат экспорта
+        - name: task_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Файл экспорта
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ParsedDataExport'
+
+ 
+  /artifacts/{id}:
+    get:
+      tags:
+        - Artifacts
+      summary: Получение артефакта
+      description: Получение скриншота или другого артефакта по ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID артефакта (из parsed_data.screenshot_path)
+      responses:
+        '200':
+          description: Файл артефакта
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  
+  /agent/register:
+    post:
+      tags:
+        - Agent
+      summary: Регистрация агента
+      description: Регистрация Android агента в системе
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRegistration'
+      responses:
+        '201':
+          description: Агент зарегистрирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    format: uuid
+                  agent_token:
+                    type: string
+                    description: Токен для последующих запросов агента
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /agent/heartbeat:
+    post:
+      tags:
+        - Agent
+      summary: Heartbeat агента
+      description: Отправка heartbeat для подтверждения активности устройства
+      security:
+        - agentAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - device_id
+              properties:
+                device_id:
+                  type: string
+                  format: uuid
+                status:
+                  type: string
+                  enum: [online, busy, error]
+                current_task_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '200':
+          description: Heartbeat принят
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /agent/tasks:
+    get:
+      tags:
+        - Agent
+      summary: Получение задач
+      description: Получение назначенных задач для устройства
+      security:
+        - agentAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список задач
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+
+  /agent/tasks/{id}/result:
+    post:
+      tags:
+        - Agent
+      summary: Отправка результата задачи
+      description: Отправка результатов выполнения задачи агентом
+      security:
+        - agentAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskResult'
+      responses:
+        '200':
+          description: Результат принят
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /agent/screenshot:
+    post:
+      tags:
+        - Agent
+      summary: Загрузка скриншота
+      description: Загрузка скриншота от агента
+      security:
+        - agentAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - device_id
+                - task_id
+                - file
+              properties:
+                device_id:
+                  type: string
+                  format: uuid
+                task_id:
+                  type: string
+                  format: uuid
+                file:
+                  type: string
+                  format: binary
+                selector:
+                  type: string
+                  description: CSS селектор элемента (опционально)
+      responses:
+        '201':
+          description: Скриншот загружен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  screenshot_path:
+                    type: string
+                    description: Путь к файлу в MinIO/S3
+                  url:
+                    type: string
+                    description: Presigned URL для доступа
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT токен для пользователей
+    agentAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен агента (долгоживущий)
+
+  parameters:
+    DeviceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID устройства
+    TaskId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID задачи
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, operator, viewer]
+        created_at:
+          type: string
+          format: date-time
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        android_id:
+          type: string
+        aaid:
+          type: string
+          nullable: true
+        ip_address:
+          type: string
+        status:
+          type: string
+          enum: [online, offline, busy, error]
+        last_heartbeat:
+          type: string
+          format: date-time
+          nullable: true
+        browser_type:
+          type: string
+          enum: [chrome, webview]
+        created_at:
+          type: string
+          format: date-time
+
+    DeviceRegistration:
+      type: object
+      required:
+        - android_id
+        - browser_type
+      properties:
+        name:
+          type: string
+        android_id:
+          type: string
+        aaid:
+          type: string
+        ip_address:
+          type: string
+        browser_type:
+          type: string
+          enum: [chrome, webview]
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+          nullable: true
+        proxy_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        type:
+          type: string
+          enum: [surfing, parsing, uniqueness, screenshot]
+        config_json:
+          type: object
+        status:
+          type: string
+          enum: [pending, assigned, running, completed, failed, cancelled]
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        result_json:
+          type: object
+          nullable: true
+
+    TaskCreate:
+      type: object
+      required:
+        - name
+        - type
+        - config_json
+      properties:
+        name:
+          type: string
+        device_id:
+          type: string
+          format: uuid
+          nullable: true
+        proxy_id:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+          enum: [surfing, parsing, uniqueness, screenshot]
+        config_json:
+          type: object
+          description: Конфигурация задачи (шаги, параметры)
+
+    TaskStep:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        step_type:
+          type: string
+        step_config:
+          type: object
+        order:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        result_json:
+          type: object
+          nullable: true
+        executed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskResult:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [completed, failed]
+        result_json:
+          type: object
+          description: Результаты выполнения задачи
+        parsed_data:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              ad_url:
+                type: string
+                nullable: true
+              ad_domain:
+                type: string
+                nullable: true
+        error:
+          type: string
+          nullable: true
+          description: Сообщение об ошибке (если status = failed)
+
+    Proxy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+          nullable: true
+        type:
+          type: string
+          enum: [http, https, socks5]
+        status:
+          type: string
+          enum: [active, inactive, error]
+        last_used:
+          type: string
+          format: date-time
+          nullable: true
+
+    ProxyCreate:
+      type: object
+      required:
+        - host
+        - port
+        - type
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        username:
+          type: string
+        password:
+          type: string
+        type:
+          type: string
+          enum: [http, https, socks5]
+
+    ParsedData:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        ad_url:
+          type: string
+          nullable: true
+        ad_domain:
+          type: string
+          nullable: true
+        screenshot_path:
+          type: string
+          nullable: true
+        parsed_at:
+          type: string
+          format: date-time
+        ahrefs_data:
+          type: object
+          nullable: true
+          description: Данные из Ahrefs API (если доступны)
+
+    ParsedDataExport:
+      type: object
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        ad_url:
+          type: string
+          nullable: true
+        ad_domain:
+          type: string
+          nullable: true
+        screenshot_url:
+          type: string
+          nullable: true
+        parsed_at:
+          type: string
+          format: date-time
+        ahrefs_domain_rating:
+          type: number
+          nullable: true
+        ahrefs_backlinks:
+          type: integer
+          nullable: true
+
+    AgentRegistration:
+      type: object
+      required:
+        - android_id
+        - browser_type
+      properties:
+        name:
+          type: string
+        android_id:
+          type: string
+        aaid:
+          type: string
+        ip_address:
+          type: string
+        browser_type:
+          type: string
+          enum: [chrome, webview]
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+  responses:
+    BadRequest:
+      description: Неверный запрос
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+              message:
+                type: string
+
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Unauthorized
+              message:
+                type: string
+                example: Invalid or expired token
+
+    Forbidden:
+      description: Доступ запрещен
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Forbidden
+              message:
+                type: string
+                example: Insufficient permissions
+
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Not Found
+              message:
+                type: string
+                example: Resource not found
+
+

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Архитектура системы автоматизации Android браузеров</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 2cm;
+            }
+            body {
+                margin: 0;
+            }
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 5px;
+        }
+        h3 {
+            color: #7f8c8d;
+            margin-top: 20px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        ul, ol {
+            margin: 10px 0;
+            padding-left: 30px;
+        }
+        li {
+            margin: 5px 0;
+        }
+        strong {
+            color: #2c3e50;
+        }
+        .component {
+            background-color: #ecf0f1;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+        }
+        .diagram {
+            background-color: #fff;
+            border: 2px solid #bdc3c7;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            white-space: pre;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Архитектура системы автоматизации Android браузеров</h1>
+
+    <h2>Обзор системы</h2>
+    <p>Система автоматизации браузеров на Android устройствах предназначена для:</p>
+    <ul>
+        <li>Автоматического серфинга по веб-сайтам через прокси</li>
+        <li>Парсинга рекламных баннеров и извлечения данных</li>
+        <li>Проверки доменов через Ahrefs API</li>
+        <li>Уникализации устройств для обхода детекции</li>
+        <li>Управления фермой из 20+ устройств параллельно</li>
+    </ul>
+
+    <h2>Компоненты системы</h2>
+
+    <div class="component">
+        <h3>1. Backend Controller</h3>
+        <p><strong>Технологии:</strong> Node.js, TypeScript, Fastify</p>
+        <p><strong>Назначение:</strong> Центральный сервер управления</p>
+        <p><strong>Функции:</strong></p>
+        <ul>
+            <li>REST API для управления устройствами и задачами</li>
+            <li>Обработка очереди задач через Bull</li>
+            <li>Интеграция с Ahrefs API</li>
+            <li>Управление хранением файлов (MinIO/S3)</li>
+            <li>WebSocket для real-time обновлений</li>
+            <li>JWT аутентификация и RBAC</li>
+        </ul>
+    </div>
+
+    <div class="component">
+        <h3>2. Android Agent (APK)</h3>
+        <p><strong>Технологии:</strong> Kotlin, Android SDK</p>
+        <p><strong>Назначение:</strong> Клиентское приложение на устройствах</p>
+        <p><strong>Функции:</strong></p>
+        <ul>
+            <li>Регистрация устройства на контроллере</li>
+            <li>Получение и выполнение задач</li>
+            <li>Управление браузером (Chrome/WebView)</li>
+            <li>Парсинг данных с веб-страниц</li>
+            <li>Уникализация устройства (root)</li>
+            <li>Загрузка скриншотов и результатов</li>
+        </ul>
+    </div>
+
+    <div class="component">
+        <h3>3. Web UI</h3>
+        <p><strong>Технологии:</strong> React, TypeScript, Vite</p>
+        <p><strong>Назначение:</strong> Веб-интерфейс для управления</p>
+        <p><strong>Функции:</strong></p>
+        <ul>
+            <li>Просмотр списка устройств и их статусов</li>
+            <li>Создание и управление задачами</li>
+            <li>Просмотр результатов парсинга</li>
+            <li>Просмотр скриншотов</li>
+            <li>Tail логов в реальном времени</li>
+        </ul>
+    </div>
+
+    <div class="component">
+        <h3>4. PostgreSQL</h3>
+        <p><strong>Назначение:</strong> Основная база данных</p>
+        <p><strong>Хранит:</strong></p>
+        <ul>
+            <li>Информацию об устройствах</li>
+            <li>Задачи и их результаты</li>
+            <li>Спарсенные данные</li>
+            <li>Результаты проверки Ahrefs</li>
+            <li>Прокси-серверы</li>
+            <li>Audit логи</li>
+        </ul>
+    </div>
+
+    <div class="component">
+        <h3>5. Redis + Bull</h3>
+        <p><strong>Назначение:</strong> Очередь задач</p>
+        <p><strong>Функции:</strong></p>
+        <ul>
+            <li>Распределение задач между устройствами</li>
+            <li>Приоритизация задач</li>
+            <li>Retry механизм</li>
+            <li>Мониторинг выполнения</li>
+        </ul>
+    </div>
+
+    <div class="component">
+        <h3>6. MinIO/S3</h3>
+        <p><strong>Назначение:</strong> Хранение файлов</p>
+        <p><strong>Хранит:</strong></p>
+        <ul>
+            <li>Скриншоты рекламных баннеров</li>
+            <li>Другие артефакты выполнения задач</li>
+        </ul>
+    </div>
+
+    <h2>Схема взаимодействия компонентов</h2>
+    <div class="diagram">┌─────────────┐
+│   Web UI    │
+│  (React)    │
+└──────┬──────┘
+       │ HTTP/WebSocket
+       │
+┌──────▼──────────────────────────────────────────────┐
+│           Backend Controller                        │
+│         (Node.js/Fastify)                           │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
+│  │   REST   │  │ WebSocket│  │   Auth   │          │
+│  │   API    │  │  Server  │  │   JWT    │          │
+│  └──────────┘  └──────────┘  └──────────┘          │
+└──────┬──────────────┬──────────────┬───────────────┘
+       │              │              │
+       │              │              │
+┌──────▼──────┐  ┌───▼──────┐  ┌───▼──────┐
+│ PostgreSQL  │  │  Redis   │  │  MinIO   │
+│             │  │  + Bull  │  │   /S3    │
+└─────────────┘  └───────────┘  └──────────┘
+       │
+       │
+┌──────▼──────────────────────────────────────────────┐
+│         Android Agent (APK)                         │
+│              (Kotlin)                                │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
+│  │ Browser  │  │  Parser  │  │Uniqueness│          │
+│  │Controller│  │          │  │ Service  │          │
+│  └──────────┘  └──────────┘  └──────────┘          │
+└──────┬──────────────────────────────────────────────┘
+       │
+       │ HTTP/HTTPS
+       │
+┌──────▼──────┐      ┌──────────────┐
+│ Proxy Server│      │ Ahrefs API   │
+│  (External) │      │  (via Backend)│
+└─────────────┘      └──────────────┘</div>
+
+    <h2>Потоки данных</h2>
+
+    <h3>1. Регистрация устройства</h3>
+    <pre>Android Agent → POST /api/agent/register
+              → Backend проверяет данные
+              → Сохранение в PostgreSQL (devices)
+              → Возврат device_id и токена</pre>
+
+    <h3>2. Получение и выполнение задачи</h3>
+    <pre>Android Agent → GET /api/agent/tasks (polling)
+              → Backend проверяет очередь (Bull)
+              → Назначение задачи устройству
+              → Agent выполняет шаги задачи
+              → POST /api/agent/tasks/:id/result
+              → Backend сохраняет результаты в PostgreSQL</pre>
+
+    <h3>3. Парсинг adurl и проверка Ahrefs</h3>
+    <pre>Android Agent → Парсинг страницы, извлечение adurl
+              → POST /api/agent/tasks/:id/result (с ad_url)
+              → Backend извлекает домен из ad_url
+              → Проверка наличия в ahrefs_data (кеш)
+              → Если нет → запрос к Ahrefs API
+              → Сохранение в ahrefs_data и parsed_data</pre>
+
+    <h3>4. Загрузка скриншотов</h3>
+    <pre>Android Agent → Создание скриншота
+              → POST /api/agent/screenshot (multipart/form-data)
+              → Backend загружает в MinIO
+              → Сохранение пути в PostgreSQL (parsed_data)
+              → Генерация presigned URL для доступа</pre>
+
+    <h3>5. Heartbeat устройств</h3>
+    <pre>Android Agent → POST /api/agent/heartbeat (каждые 30 сек)
+              → Backend обновляет last_heartbeat в devices
+              → WebSocket уведомление для UI</pre>
+
+    <h2>Технические детали</h2>
+
+    <h3>Backend API</h3>
+    <ul>
+        <li><strong>Порт:</strong> 3000 (по умолчанию)</li>
+        <li><strong>Протокол:</strong> HTTP/HTTPS, WebSocket</li>
+        <li><strong>Аутентификация:</strong> JWT токены</li>
+        <li><strong>Формат данных:</strong> JSON</li>
+    </ul>
+
+    <h3>Android Agent</h3>
+    <ul>
+        <li><strong>Минимальная версия Android:</strong> 7.0 (API 24)</li>
+        <li><strong>Требования:</strong> Root права</li>
+        <li><strong>Интервал heartbeat:</strong> 30 секунд</li>
+        <li><strong>Интервал polling задач:</strong> 10 секунд</li>
+    </ul>
+
+    <h3>База данных</h3>
+    <ul>
+        <li><strong>PostgreSQL версия:</strong> 14+</li>
+        <li><strong>Кодировка:</strong> UTF-8</li>
+        <li><strong>Таймзона:</strong> UTC</li>
+    </ul>
+
+    <h3>Очередь задач</h3>
+    <ul>
+        <li><strong>Redis версия:</strong> 6+</li>
+        <li><strong>Bull версия:</strong> 4+</li>
+        <li><strong>Retry стратегия:</strong> Exponential backoff</li>
+        <li><strong>Максимум retry:</strong> 3 попытки</li>
+    </ul>
+
+    <h3>Хранение файлов</h3>
+    <ul>
+        <li><strong>MinIO/S3:</strong> Совместимый API</li>
+        <li><strong>Структура папок:</strong> screenshots/{device_id}/{task_id}/{timestamp}.png</li>
+        <li><strong>Формат скриншотов:</strong> PNG</li>
+        <li><strong>Максимальный размер файла:</strong> 10 MB</li>
+    </ul>
+
+    <h2>Масштабируемость</h2>
+
+    <h3>Текущие ограничения</h3>
+    <ul>
+        <li><strong>Устройства:</strong> 20 параллельно (тестирование)</li>
+        <li><strong>Задачи в очереди:</strong> до 1000</li>
+        <li><strong>Размер БД:</strong> до 100 GB</li>
+    </ul>
+
+    <h3>Возможности масштабирования</h3>
+    <ul>
+        <li>Горизонтальное масштабирование Backend (load balancer)</li>
+        <li>Шардирование PostgreSQL</li>
+        <li>Redis Cluster для больших нагрузок</li>
+        <li>S3 вместо MinIO для облачного хранения</li>
+    </ul>
+
+    <h2>Безопасность</h2>
+
+    <h3>Аутентификация</h3>
+    <ul>
+        <li>JWT токены с истечением (24 часа)</li>
+        <li>Refresh токены для продления сессии</li>
+        <li>Отдельные токены для агентов (долгоживущие)</li>
+    </ul>
+
+    <h3>Авторизация</h3>
+    <ul>
+        <li>RBAC (Role-Based Access Control)</li>
+        <li>Роли: admin, operator, viewer</li>
+        <li>Проверка прав на уровне middleware</li>
+    </ul>
+
+    <h3>Защита данных</h3>
+    <ul>
+        <li>Шифрование прокси credentials в БД</li>
+        <li>HTTPS для всех соединений</li>
+        <li>Валидация всех входных данных</li>
+        <li>Rate limiting для API</li>
+    </ul>
+
+    <h3>Audit логирование</h3>
+    <ul>
+        <li>Все действия пользователей</li>
+        <li>Все действия агентов</li>
+        <li>Ошибки и подозрительная активность</li>
+    </ul>
+
+    <h2>Мониторинг и логирование</h2>
+
+    <h3>Логирование</h3>
+    <ul>
+        <li>Структурированные логи (JSON)</li>
+        <li>Уровни: error, warn, info, debug</li>
+        <li>Ротация логов (daily)</li>
+        <li>Централизованное хранение</li>
+    </ul>
+
+    <h3>Мониторинг</h3>
+    <ul>
+        <li>Health check endpoints</li>
+        <li>Метрики производительности</li>
+        <li>Мониторинг очереди задач (Bull Board)</li>
+        <li>Алерты при недоступности устройств</li>
+    </ul>
+
+    <h2>Развертывание</h2>
+
+    <h3>Docker Compose</h3>
+    <ul>
+        <li>Все сервисы в контейнерах</li>
+        <li>Автоматический запуск зависимостей</li>
+        <li>Переменные окружения для конфигурации</li>
+    </ul>
+
+    <h3>Требования к серверу</h3>
+    <ul>
+        <li><strong>ОС:</strong> Linux/Windows Server</li>
+        <li><strong>RAM:</strong> минимум 4 GB, рекомендуется 8 GB</li>
+        <li><strong>CPU:</strong> минимум 2 ядра, рекомендуется 4</li>
+        <li><strong>Диск:</strong> минимум 50 GB SSD</li>
+        <li><strong>Сеть:</strong> стабильное подключение к интернету</li>
+    </ul>
+
+    <h3>Удаленное управление</h3>
+    <ul>
+        <li>Поддержка RDP для Windows</li>
+        <li>SSH для Linux</li>
+        <li>Доступ к веб-интерфейсу через браузер</li>
+    </ul>
+
+    <h2>Интеграции</h2>
+
+    <h3>Ahrefs API</h3>
+    <ul>
+        <li>Проверка доменов рекламодателей</li>
+        <li>Кеширование результатов (24 часа)</li>
+        <li>Обработка rate limits</li>
+        <li>Сохранение полного JSON ответа</li>
+    </ul>
+
+    <h3>Прокси серверы</h3>
+    <ul>
+        <li>Поддержка HTTP/HTTPS/SOCKS5</li>
+        <li>Ротация между задачами</li>
+        <li>Проверка работоспособности</li>
+        <li>Автоматическая замена при ошибке</li>
+    </ul>
+
+    <h2>Резервное копирование</h2>
+
+    <h3>База данных</h3>
+    <ul>
+        <li>Ежедневные бэкапы PostgreSQL</li>
+        <li>Хранение последних 7 дней</li>
+        <li>Автоматическое восстановление</li>
+    </ul>
+
+    <h3>Файлы</h3>
+    <ul>
+        <li>Репликация MinIO/S3</li>
+        <li>Версионирование файлов</li>
+        <li>Политика удаления старых файлов (90 дней)</li>
+    </ul>
+
+    <hr>
+    <p style="text-align: center; color: #7f8c8d; font-size: 12px;">
+        Документ создан: <script>document.write(new Date().toLocaleDateString('ru-RU'))</script>
+    </p>
+</body>
+</html>
+
+
