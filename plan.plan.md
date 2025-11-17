@@ -370,18 +370,18 @@ interface ParsedData {
   id: string;
   task_id: string;
   url: string;
-  ad_url: string; // извлеченный adurl
-  ad_domain: string; // домен рекламодателя
-  screenshot_path: string; // путь к скриншоту в MinIO
+  ad_url: string; 
+  ad_domain: string; 
+  screenshot_path: string; 
   parsed_at: Date;
 }
 
 interface AhrefsData {
   id: string;
   domain: string;
-  data_json: JSON; // полный ответ от Ahrefs API
+  data_json: JSON; 
   checked_at: Date;
-  expires_at: Date; // кеш на 24 часа
+  expires_at: Date; 
 }
 ```
 
