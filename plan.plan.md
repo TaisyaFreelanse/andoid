@@ -267,6 +267,8 @@ android-agent/
 - Изменение User-Agent через build.prop или runtime
 - Изменение timezone через `settings put global auto_time_zone`
 - Изменение build.prop параметров (model, manufacturer, etc.)
+- Изменение геолокации (GPS координаты) через `settings put secure mock_location` и настройки Location Services
+- Изменение IP-геолокации через прокси (уже реализовано в системе)
 - **Важно:** Без изменения IMEI/serial/baseband (hardware level)
 
  3.3 Примеры сценариев (JSON/YAML)
@@ -327,6 +329,7 @@ android-agent/
     {"type": "clear_webview_data"},
     {"type": "change_user_agent", "ua": "random"},
     {"type": "change_timezone", "timezone": "random"},
+    {"type": "change_location", "latitude": "random", "longitude": "random"},
     {"type": "modify_build_prop", "params": {"model": "random", "manufacturer": "random"}}
   ]
 }
@@ -502,6 +505,8 @@ task_id,url,ad_url,ad_domain,screenshot_url,parsed_at,ahrefs_domain_rating,ahref
 - Проверка root прав перед выполнением
 - Логирование всех изменений
 - Откат изменений при ошибке (где возможно)
+- Подмена геолокации: изменение GPS координат через mock location и настройки Location Services
+- IP-геолокация меняется автоматически через прокси-серверы
 
  Поддержка выбора браузера
 

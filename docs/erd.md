@@ -102,6 +102,8 @@ erDiagram
         string aaid
         string user_agent
         string timezone
+        decimal latitude
+        decimal longitude
         string build_prop_hash
         timestamp created_at
     }
@@ -275,6 +277,8 @@ erDiagram
 | aaid | VARCHAR(36) | AAID после уникализации |
 | user_agent | TEXT | User Agent после изменения |
 | timezone | VARCHAR(50) | Timezone после изменения |
+| latitude | DECIMAL(10, 8) | Широта GPS координаты после изменения |
+| longitude | DECIMAL(11, 8) | Долгота GPS координаты после изменения |
 | build_prop_hash | VARCHAR(64) | Хеш build.prop для отслеживания изменений |
 | created_at | TIMESTAMP | Время уникализации |
 
@@ -360,5 +364,6 @@ erDiagram
 - Версионирование миграций
 - Откат изменений при необходимости
 - Тестирование миграций на тестовой БД
+
 
 
