@@ -73,6 +73,8 @@ erDiagram
         string password_encrypted
         enum type
         enum status
+        string country
+        string timezone
         timestamp last_used
         timestamp created_at
     }
@@ -221,6 +223,8 @@ erDiagram
 | password_encrypted | VARCHAR(255) (NULL) | Зашифрованный пароль |
 | type | ENUM('http', 'https', 'socks5') | Тип прокси |
 | status | ENUM('active', 'inactive', 'error') | Статус прокси |
+| country | VARCHAR(2) (NULL) | Код страны прокси (ISO 3166-1 alpha-2, например 'US', 'GB') |
+| timezone | VARCHAR(50) (NULL) | Таймзона прокси (например 'America/New_York', 'Europe/London') |
 | last_used | TIMESTAMP (NULL) | Время последнего использования |
 | created_at | TIMESTAMP | Дата добавления |
 
@@ -228,6 +232,7 @@ erDiagram
 - PRIMARY KEY (id)
 - INDEX (status)
 - INDEX (type)
+- INDEX (country)
 - INDEX (last_used)
 
  6. parsed_data

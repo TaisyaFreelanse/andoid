@@ -37,7 +37,7 @@
 - `devices` (id, name, android_id, aaid, ip_address, status, last_heartbeat, browser_type, created_at)
 - `tasks` (id, name, type, config_json, status, device_id, created_at, started_at, completed_at)
 - `task_steps` (id, task_id, step_type, step_config, order, status, result_json)
-- `proxies` (id, host, port, username, password, type, status, last_used)
+- `proxies` (id, host, port, username, password, type, status, country, timezone, last_used)
 - `parsed_data` (id, task_id, url, ad_url, ad_domain, screenshot_path, parsed_at)
 - `semrush_data` (id, domain, data_json, checked_at, expires_at)
 - `device_fingerprints` (id, device_id, android_id, aaid, ua, timezone, latitude, longitude, build_prop_hash, created_at)
@@ -266,6 +266,7 @@ android-agent/
 - Очистка Chrome/WebView data через `pm clear` и удаление папок
 - Изменение User-Agent через build.prop или runtime
 - Изменение timezone через `settings put global auto_time_zone`
+- Автоматическая установка таймзоны в соответствии с геолокацией прокси-сервера (при назначении прокси определяется страна/регион и устанавливается соответствующая таймзона)
 - Изменение build.prop параметров (model, manufacturer, etc.)
 - Изменение геолокации (GPS координаты) через `settings put secure mock_location` и настройки Location Services
 - Изменение IP-геолокации через прокси (уже реализовано в системе)
@@ -520,3 +521,8 @@ task_id,url,ad_url,ad_domain,screenshot_url,parsed_at,semrush_domain_rating,semr
 - Поддержка HTTP/HTTPS/SOCKS5
 - Проверка работоспособности прокси перед использованием
 - Автоматическая замена при ошибке подключения
+- Автоматическая установка таймзоны устройства в соответствии с геолокацией прокси
+  - При назначении прокси backend определяет страну/регион прокси (через GeoIP API или базу данных)
+  - Backend отправляет команду агенту установить соответствующую таймзону
+  - Агент устанавливает таймзону через root команды (`settings put global auto_time_zone`)
+  - Это обеспечивает соответствие таймзоны устройства геолокации прокси для более реалистичного фингерпринта
