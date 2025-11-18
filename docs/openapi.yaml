@@ -249,6 +249,59 @@ paths:
                       name:
                         type: string
 
+  /devices/{id}/stream/start:
+    post:
+      tags:
+        - Devices
+      summary: Запуск стриминга экрана устройства
+      description: Запуск стриминга экрана устройства в реальном времени
+      security:
+        - bearerAuth: []
+        - rbac: [admin, operator]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Стриминг запущен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Streaming started
+                  websocket_url:
+                    type: string
+                    description: WebSocket URL для подключения к стриму
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{id}/stream/stop:
+    post:
+      tags:
+        - Devices
+      summary: Остановка стриминга экрана устройства
+      description: Остановка стриминга экрана устройства
+      security:
+        - bearerAuth: []
+        - rbac: [admin, operator]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Стриминг остановлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Streaming stopped
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   
   /tasks:
     get:
@@ -737,6 +790,41 @@ paths:
                   url:
                     type: string
                     description: Presigned URL для доступа
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /agent/stream:
+    post:
+      tags:
+        - Agent
+      summary: Отправка скриншота для стриминга
+      description: Отправка скриншота экрана для стриминга в реальном времени (WebSocket)
+      security:
+        - agentAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - device_id
+                - image_data
+              properties:
+                device_id:
+                  type: string
+                  format: uuid
+                image_data:
+                  type: string
+                  format: base64
+                  description: Base64 encoded JPEG изображение экрана
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: Время захвата скриншота
+      responses:
+        '200':
+          description: Скриншот принят для стриминга
         '400':
           $ref: '#/components/responses/BadRequest'
 
