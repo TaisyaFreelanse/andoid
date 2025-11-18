@@ -40,7 +40,7 @@
 - `proxies` (id, host, port, username, password, type, status, last_used)
 - `parsed_data` (id, task_id, url, ad_url, ad_domain, screenshot_path, parsed_at)
 - `semrush_data` (id, domain, data_json, checked_at, expires_at)
-- `device_fingerprints` (id, device_id, android_id, aaid, ua, timezone, build_prop_hash, created_at)
+- `device_fingerprints` (id, device_id, android_id, aaid, ua, timezone, latitude, longitude, build_prop_hash, created_at)
 - `audit_logs` (id, user_id, action, resource_type, resource_id, details, timestamp)
 
  1.3 OpenAPI спецификация (черновик)
