@@ -4,7 +4,7 @@ info:
   description: |
     REST API для управления системой автоматизации браузеров на Android устройствах.
     Система позволяет управлять устройствами, создавать задачи, парсить данные с веб-сайтов,
-    проверять домены через Ahrefs API и управлять уникализацией устройств.
+    проверять домены через Semrush API и управлять уникализацией устройств.
   version: 1.0.0
   contact:
     name: API Support
@@ -1026,10 +1026,10 @@ components:
         parsed_at:
           type: string
           format: date-time
-        ahrefs_data:
+        semrush_data:
           type: object
           nullable: true
-          description: Данные из Ahrefs API (если доступны)
+          description: Данные из Semrush API (если доступны)
 
     ParsedDataExport:
       type: object
@@ -1051,10 +1051,10 @@ components:
         parsed_at:
           type: string
           format: date-time
-        ahrefs_domain_rating:
+        semrush_domain_rating:
           type: number
           nullable: true
-        ahrefs_backlinks:
+        semrush_backlinks:
           type: integer
           nullable: true
 

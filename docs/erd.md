@@ -13,7 +13,7 @@ erDiagram
     tasks ||--o{ task_steps : contains
     tasks ||--o{ parsed_data : produces
     proxies ||--o{ tasks : used_by
-    parsed_data ||--o| ahrefs_data : references
+    parsed_data ||--o| semrush_data : references
     
     users {
         uuid id PK
@@ -87,7 +87,7 @@ erDiagram
         timestamp parsed_at
     }
     
-    ahrefs_data {
+    semrush_data {
         uuid id PK
         string domain UK
         jsonb data_json
@@ -250,14 +250,14 @@ erDiagram
 - INDEX (parsed_at)
 - UNIQUE (task_id, ad_domain) -- предотвращение дубликатов
 
- 7. ahrefs_data
-Таблица результатов проверки доменов через Ahrefs API
+ 7. semrush_data
+Таблица результатов проверки доменов через Semrush API
 
 | Поле | Тип | Описание |
 |------|-----|----------|
 | id | UUID (PK) | Уникальный идентификатор |
 | domain | VARCHAR(255) (UNIQUE) | Проверяемый домен |
-| data_json | JSONB | Полный JSON ответ от Ahrefs API |
+| data_json | JSONB | Полный JSON ответ от Semrush API |
 | checked_at | TIMESTAMP | Время проверки |
 | expires_at | TIMESTAMP | Время истечения кеша (24 часа) |
 
@@ -329,8 +329,8 @@ erDiagram
    - Один прокси может использоваться в множестве задач
    - ON DELETE: SET NULL
 
-6. **parsed_data → ahrefs_data** (N:1)
-   - Множество записей парсинга могут ссылаться на один домен в Ahrefs
+6. **parsed_data → semrush_data** (N:1)
+   - Множество записей парсинга могут ссылаться на один домен в Semrush
    - Связь через поле ad_domain (не FK, т.к. может быть NULL)
 
 7. **devices → device_fingerprints** (1:N)
@@ -345,7 +345,7 @@ erDiagram
  Уникальность
 - `devices.android_id` - уникален (одно устройство = один android_id)
 - `parsed_data(task_id, ad_domain)` - уникальная комбинация (предотвращение дубликатов)
-- `ahrefs_data.domain` - уникален (один домен = одна запись)
+- `semrush_data.domain` - уникален (один домен = одна запись)
 
  Проверки (CHECK constraints)
 - `devices.status` IN ('online', 'offline', 'busy', 'error')
@@ -356,7 +356,7 @@ erDiagram
  Триггеры
 - Автоматическое обновление `updated_at` при изменении записи
 - Автоматическое создание записи в `audit_logs` при изменении критичных данных
-- Автоматическая очистка истекших записей в `ahrefs_data` (expires_at < NOW())
+- Автоматическая очистка истекших записей в `semrush_data` (expires_at < NOW())
 
  Миграции
 

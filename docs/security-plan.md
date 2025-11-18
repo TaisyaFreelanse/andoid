@@ -17,8 +17,8 @@
 - `REDIS_URL` - строка подключения к Redis (если требуется пароль)
 - `MINIO_ACCESS_KEY` - ключ доступа к MinIO
 - `MINIO_SECRET_KEY` - секретный ключ MinIO
-- `AHREFS_API_KEY` - API ключ для Ahrefs
-- `AHREFS_SECRET_KEY` - секретный ключ Ahrefs
+- `SEMRUSH_API_KEY` - API ключ для Semrush
+- `SEMRUSH_SECRET_KEY` - секретный ключ Semrush (если требуется)
 
 **Правила:**
 - `.env` файлы НЕ должны коммититься в Git
@@ -34,8 +34,8 @@ DATABASE_URL=postgresql://user:password@localhost:5432/automation_db
 REDIS_URL=redis://localhost:6379
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
-AHREFS_API_KEY=your-ahrefs-api-key
-AHREFS_SECRET_KEY=your-ahrefs-secret-key
+SEMRUSH_API_KEY=your-semrush-api-key
+SEMRUSH_SECRET_KEY=your-semrush-secret-key
 ```
 
  1.2 Хранение секретов в продакшене

@@ -21,13 +21,13 @@
   
   [Android Agent] <-> [Backend API] (WebSocket/HTTP polling)
                    <-> [Proxy Server] (HTTP/HTTPS)
-                   <-> [Ahrefs API] (через Backend)
+                   <-> [Semrush API] (через Backend)
   ```
 
 - **Потоки данных:**
   - Регистрация устройства → Backend → PostgreSQL
   - Получение задачи → Agent → Выполнение → Результаты → Backend
-  - Парсинг adurl → Agent → Backend → Ahrefs API → PostgreSQL
+  - Парсинг adurl → Agent → Backend → Semrush API → PostgreSQL
   - Скриншоты → Agent → Backend → MinIO → PostgreSQL (ссылка)
 
 1.2 ERD (Entity Relationship Diagram)
@@ -39,7 +39,7 @@
 - `task_steps` (id, task_id, step_type, step_config, order, status, result_json)
 - `proxies` (id, host, port, username, password, type, status, last_used)
 - `parsed_data` (id, task_id, url, ad_url, ad_domain, screenshot_path, parsed_at)
-- `ahrefs_data` (id, domain, data_json, checked_at, expires_at)
+- `semrush_data` (id, domain, data_json, checked_at, expires_at)
 - `device_fingerprints` (id, device_id, android_id, aaid, ua, timezone, build_prop_hash, created_at)
 - `audit_logs` (id, user_id, action, resource_type, resource_id, details, timestamp)
 
@@ -107,7 +107,7 @@ backend/
 │   │   ├── device.service.ts
 │   │   ├── task.service.ts
 │   │   ├── proxy.service.ts
-│   │   ├── ahrefs.service.ts
+│   │   ├── semrush.service.ts
 │   │   └── storage.service.ts
 │   ├── models/
 │   │   ├── device.model.ts
@@ -133,14 +133,14 @@ backend/
 - RBAC middleware для проверки прав
 - Интеграция с PostgreSQL через Prisma ORM
 - Redis + Bull для очереди задач
-- Интеграция с Ahrefs API (сервис для проверки доменов)
+- Интеграция с Semrush API (сервис для проверки доменов)
 - Загрузка файлов в MinIO/S3
 - WebSocket для real-time обновлений статуса устройств
 
 **Файлы для реализации:**
 
 - `src/routes/agent.ts` - endpoints для Android агента
-- `src/services/ahrefs.service.ts` - интеграция с Ahrefs API
+- `src/services/semrush.service.ts` - интеграция с Semrush API
 - `src/queue/task.processor.ts` - обработчик очереди задач
 - `prisma/schema.prisma` - схема БД
 
@@ -294,7 +294,7 @@ android-agent/
   "post_process": {
     "extract_adurl": true,
     "deduplicate_domains": true,
-    "check_ahrefs": true
+    "check_semrush": true
   }
 }
 ```
@@ -364,7 +364,7 @@ android-agent/
 **Таблицы:**
 
 - `parsed_data` - все спарсенные данные
-- `ahrefs_data` - результаты проверки Ahrefs (с кешированием)
+- `semrush_data` - результаты проверки Semrush (с кешированием)
 
 **Структура данных:**
 
@@ -379,7 +379,7 @@ interface ParsedData {
   parsed_at: Date;
 }
 
-interface AhrefsData {
+interface SemrushData {
   id: string;
   domain: string;
   data_json: JSON; 
@@ -398,12 +398,12 @@ interface AhrefsData {
 **Формат CSV:**
 
 ```csv
-task_id,url,ad_url,ad_domain,screenshot_url,parsed_at,ahrefs_domain_rating,ahrefs_backlinks
+task_id,url,ad_url,ad_domain,screenshot_url,parsed_at,semrush_domain_rating,semrush_backlinks
 ```
 
 **Формат JSON:**
 
-- Массив объектов с полными данными включая вложенные объекты Ahrefs
+- Массив объектов с полными данными включая вложенные объекты Semrush
 
 **Файл:** `src/routes/parsed-data.ts` (export endpoints)
 
@@ -426,7 +426,7 @@ task_id,url,ad_url,ad_domain,screenshot_url,parsed_at,ahrefs_domain_rating,ahref
 - Регистрация устройств
 - Создание и выполнение задач
 - Парсинг рекламных баннеров
-- Проверка Ahrefs API
+- Проверка Semrush API
 - Уникализация устройств
 - Загрузка скриншотов
 
@@ -459,7 +459,7 @@ task_id,url,ad_url,ad_domain,screenshot_url,parsed_at,ahrefs_domain_rating,ahref
 - [ ] Задачи выполняются корректно на всех устройствах
 - [ ] Парсинг adurl работает на всех тестовых сайтах
 - [ ] Скриншоты сохраняются и доступны через UI
-- [ ] Ahrefs API интегрирован и данные сохраняются
+- [ ] Semrush API интегрирован и данные сохраняются
 - [ ] Уникализация устройств работает (проверка через device info)
 - [ ] Экспорт CSV/JSON работает
 - [ ] UI отображает все данные корректно
@@ -490,11 +490,11 @@ task_id,url,ad_url,ad_domain,screenshot_url,parsed_at,ahrefs_domain_rating,ahref
 - Regex паттерн: `&adurl=([^&]+)` или `adurl=([^&]+)`
 - Извлечение из атрибута `href` ссылок
 - Декодирование URL если необходимо
-- Валидация домена перед отправкой в Ahrefs
+- Валидация домена перед отправкой в Semrush
 
- Интеграция с Ahrefs API
+ Интеграция с Semrush API
 
-- Backend сервис `ahrefs.service.ts`
+- Backend сервис `semrush.service.ts`
 - Кеширование результатов на 24 часа
 - Обработка rate limits
 - Сохранение полного JSON ответа для анализа

@@ -83,7 +83,7 @@
     <ul>
         <li>Автоматического серфинга по веб-сайтам через прокси</li>
         <li>Парсинга рекламных баннеров и извлечения данных</li>
-        <li>Проверки доменов через Ahrefs API</li>
+        <li>Проверки доменов через Semrush API</li>
         <li>Уникализации устройств для обхода детекции</li>
         <li>Управления фермой из 20+ устройств параллельно</li>
     </ul>
@@ -98,7 +98,7 @@
         <ul>
             <li>REST API для управления устройствами и задачами</li>
             <li>Обработка очереди задач через Bull</li>
-            <li>Интеграция с Ahrefs API</li>
+            <li>Интеграция с Semrush API</li>
             <li>Управление хранением файлов (MinIO/S3)</li>
             <li>WebSocket для real-time обновлений</li>
             <li>JWT аутентификация и RBAC</li>
@@ -142,7 +142,7 @@
             <li>Информацию об устройствах</li>
             <li>Задачи и их результаты</li>
             <li>Спарсенные данные</li>
-            <li>Результаты проверки Ahrefs</li>
+            <li>Результаты проверки Semrush</li>
             <li>Прокси-серверы</li>
             <li>Audit логи</li>
         </ul>
@@ -207,7 +207,7 @@
        │ HTTP/HTTPS
        │
 ┌──────▼──────┐      ┌──────────────┐
-│ Proxy Server│      │ Ahrefs API   │
+│ Proxy Server│      │ Semrush API  │
 │  (External) │      │  (via Backend)│
 └─────────────┘      └──────────────┘</div>
 
@@ -227,13 +227,13 @@
               → POST /api/agent/tasks/:id/result
               → Backend сохраняет результаты в PostgreSQL</pre>
 
-    <h3>3. Парсинг adurl и проверка Ahrefs</h3>
+    <h3>3. Парсинг adurl и проверка Semrush</h3>
     <pre>Android Agent → Парсинг страницы, извлечение adurl
               → POST /api/agent/tasks/:id/result (с ad_url)
               → Backend извлекает домен из ad_url
-              → Проверка наличия в ahrefs_data (кеш)
-              → Если нет → запрос к Ahrefs API
-              → Сохранение в ahrefs_data и parsed_data</pre>
+              → Проверка наличия в semrush_data (кеш)
+              → Если нет → запрос к Semrush API
+              → Сохранение в semrush_data и parsed_data</pre>
 
     <h3>4. Загрузка скриншотов</h3>
     <pre>Android Agent → Создание скриншота
@@ -381,7 +381,7 @@
 
     <h2>Интеграции</h2>
 
-    <h3>Ahrefs API</h3>
+    <h3>Semrush API</h3>
     <ul>
         <li>Проверка доменов рекламодателей</li>
         <li>Кеширование результатов (24 часа)</li>
