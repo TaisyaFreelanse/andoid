@@ -1,0 +1,13 @@
+.artifacts-page {
+  width: 100%;
+  gap: 2.5rem;
+}
+
+.artifacts-page .page-section {
+  padding: 2rem 2.5rem;
+}
+
+.artifacts-page .section-heading h3 {
+  letter-spacing: 0.3em;
+}
+

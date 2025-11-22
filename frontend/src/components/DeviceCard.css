@@ -1,0 +1,226 @@
+.device-phone {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.device-phone:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+
+.phone-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 6px;
+  height: 18px;
+}
+
+.status-bar-left {
+  display: flex;
+  align-items: center;
+}
+
+.device-otg-badge {
+  background: #9b59b6;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: 'Arial', sans-serif;
+  letter-spacing: 0.3px;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.status-icon {
+  width: 10px;
+  height: 10px;
+  opacity: 0.5;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 2px;
+  position: relative;
+}
+
+.wifi-icon::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-top: none;
+  border-radius: 0 0 2px 2px;
+  top: 2px;
+  left: 2px;
+}
+
+.battery-icon::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  height: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 1px;
+  top: 1px;
+  left: 3px;
+}
+
+.battery-icon::before {
+  content: '';
+  position: absolute;
+  width: 1px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.6);
+  top: 2px;
+  right: -1px;
+}
+
+.signal-icon::after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-top: none;
+  border-right: none;
+  top: 3px;
+  left: 3px;
+}
+
+
+.phone-top-content {
+  padding: 4px 8px 2px 8px;
+  text-align: center;
+}
+
+.device-number-large {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Arial', sans-serif;
+  margin-bottom: 2px;
+}
+
+.device-model-text {
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 400;
+  font-family: 'Arial', sans-serif;
+  opacity: 0.9;
+}
+
+
+.phone-center-number {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaaaaa;
+  font-size: 100px;
+  font-weight: 100;
+  font-family: 'Arial', sans-serif;
+  line-height: 1;
+  letter-spacing: -4px;
+}
+
+
+.phone-nav-bar {
+  padding: 6px 8px 4px 8px;
+  background: transparent;
+}
+
+.nav-icons {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  margin-bottom: 4px;
+  padding: 0 2px;
+}
+
+.nav-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.nav-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.phone-icon {
+  background: #27ae60;
+}
+
+.message-icon {
+  background: #f39c12;
+}
+
+.browser-icon {
+  background: #3498db;
+}
+
+.camera-icon {
+  background: #e74c3c;
+}
+
+.nav-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.nav-button {
+  position: relative;
+}
+
+.back-btn {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 2px 4px 2px 0;
+  border-color: transparent rgba(255, 255, 255, 0.5) transparent transparent;
+  background: none;
+  border-radius: 0;
+}
+
+.home-btn {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.6);
+  border: none;
+}
+
+.recent-btn {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 2px 0 2px 4px;
+  border-color: transparent transparent transparent rgba(255, 255, 255, 0.5);
+  background: none;
+  border-radius: 0;
+}
+

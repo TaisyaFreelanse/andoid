@@ -1,0 +1,13 @@
+.tasks-page {
+  width: 100%;
+  gap: 2.5rem;
+}
+
+.tasks-page .page-section {
+  padding: 2rem 2.5rem;
+}
+
+.tasks-page .section-heading h3 {
+  letter-spacing: 0.35em;
+}
+

@@ -1,0 +1,53 @@
+.logs-page {
+  width: 100%;
+  gap: 2.5rem;
+}
+
+.logs-shell {
+  padding: 0;
+  overflow: hidden;
+}
+
+.logs-container {
+  height: 600px;
+  padding: 2.5rem;
+  font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+  font-size: 0.95rem;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 55%),
+    rgba(0, 0, 0, 0.55);
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-y: auto;
+}
+
+.logs-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.logs-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+}
+
+.empty-logs {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.logs-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.log-line {
+  padding: 0.35rem 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+

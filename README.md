@@ -90,6 +90,94 @@ Android Browser Automation System
 - React + TypeScript
 - Vite (сборщик)
 
-Быстрый старт
+## Установка
 
+### Вариант 1: Docker Compose (рекомендуется)
 
+**⚠️ Важно:** Перед запуском убедитесь, что **Docker Desktop запущен**!
+
+**Шаги запуска:**
+
+1. **Запустите Docker Desktop** (если еще не запущен)
+   - Откройте меню Пуск → найдите "Docker Desktop" → запустите
+   - Дождитесь полной загрузки (1-2 минуты)
+   - Проверьте: `docker ps` (должно работать без ошибок)
+
+2. **Настройте переменные окружения:**
+   ```powershell
+   # Если файл .env еще не создан
+   Copy-Item .env.example .env
+   ```
+   Откройте `.env` и измените секретные ключи (минимум 32 символа):
+   - `JWT_SECRET`
+   - `REFRESH_TOKEN_SECRET`
+
+3. **Запустите все сервисы:**
+   ```powershell
+   docker-compose up -d
+   ```
+
+4. **Проверьте статус:**
+   ```powershell
+   docker-compose ps
+   ```
+
+5. **Откройте в браузере:**
+   - Frontend: http://localhost:5173
+   - Backend API: http://localhost:3000/health
+   - MinIO Console: http://localhost:9001 (логин: minioadmin, пароль: minioadmin)
+
+**Учетные данные по умолчанию:**
+- Admin: `admin` / `admin123`
+- Operator: `operator` / `operator123`
+- Viewer: `viewer` / `viewer123`
+
+**Проблемы с запуском?** Проверьте раздел ниже «Troubleshooting».
+
+Подробнее о каждой службе и командах см. раздел «Docker Compose» в этом README.
+
+### Вариант 2: Локальная установка
+
+1. Установите зависимости для backend и frontend
+2. Настройте переменные окружения
+3. Запустите миграции базы данных
+4. Запустите серверы
+
+## Docker Compose
+
+### Основные команды
+
+```bash
+# Запуск всех сервисов
+docker-compose up -d
+
+# Просмотр логов
+docker-compose logs -f
+
+# Перезапуск конкретного сервиса
+docker-compose restart frontend
+
+# Пересборка образов
+docker-compose build frontend
+
+# Остановка и очистка
+docker-compose down           # только контейнеры
+docker-compose down -v        # контейнеры + volumes
+```
+
+### Полезные контейнеры
+
+- `backend` – Fastify API (`http://localhost:3000`)
+- `frontend` – React UI (`http://localhost:5173`)
+- `postgres` – база данных (порт `5432`)
+- `redis` – очередь (порт `6379`)
+- `minio` – объектное хранилище (`http://localhost:9001`)
+
+## Troubleshooting
+
+- **Docker не запускается** – убедитесь, что Docker Desktop запущен и `docker ps` работает без ошибок.
+- **Нет `.env`** – скопируйте `.env.example` и задайте собственные секреты.
+- **Порты заняты** – остановите конфликтующие приложения или измените порты в `docker-compose.yml`.
+- **Backend не поднимается** – проверьте `docker-compose logs backend`, убедитесь, что PostgreSQL и Redis запущены.
+- **PostgreSQL недоступен** – смотрите `docker-compose logs postgres`, при необходимости выполните `docker-compose restart postgres`.
+- **MinIO не открывается** – убедитесь, что порты `9000/9001` свободны и контейнер `minio` в статусе `Up`.

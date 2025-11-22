@@ -1,0 +1,106 @@
+.task-card {
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  padding: 1.75rem;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.task-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.1), transparent 55%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.task-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-4px);
+  box-shadow: 0 25px 55px rgba(0, 0, 0, 0.5);
+}
+
+.task-card:hover::before {
+  opacity: 1;
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.task-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  flex: 1;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.status-badge {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.status-badge.pending {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.status-badge.running {
+  background: linear-gradient(120deg, #ffffff, #dcdce2);
+  color: #000;
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(255, 255, 255, 0.2);
+}
+
+.status-badge.completed {
+  background: #73ffb8;
+  color: #0b2c1b;
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(115, 255, 184, 0.35);
+}
+
+.status-badge.failed {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ff8b8b;
+  border-color: rgba(255, 139, 139, 0.5);
+}
+
+.task-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+.label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.value {
+  color: var(--text-primary);
+  text-align: right;
+  font-weight: 400;
+}
+

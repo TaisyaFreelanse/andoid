@@ -1,0 +1,236 @@
+ This is your Prisma schema file,
+ learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  operator
+  viewer
+}
+
+enum DeviceStatus {
+  online
+  offline
+  busy
+  error
+}
+
+enum BrowserType {
+  chrome
+  webview
+}
+
+enum TaskType {
+  surfing
+  parsing
+  uniqueness
+  screenshot
+}
+
+enum TaskStatus {
+  pending
+  assigned
+  running
+  completed
+  failed
+  cancelled
+}
+
+enum TaskStepStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+enum ProxyType {
+  http
+  https
+  socks5
+}
+
+enum ProxyStatus {
+  active
+  inactive
+  error
+}
+
+model User {
+  id           String      @id @default(uuid())
+  username     String      @unique @db.VarChar(50)
+  email        String      @unique @db.VarChar(255)
+  passwordHash String      @map("password_hash") @db.VarChar(255)
+  role         UserRole    @default(viewer)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  tasks      Task[]
+  auditLogs AuditLog[]
+
+  @@index([role])
+  @@map("users")
+}
+
+model Device {
+  id           String       @id @default(uuid())
+  name         String?      @db.VarChar(100)
+  androidId    String       @unique @map("android_id") @db.VarChar(16)
+  aaid         String?      @db.VarChar(36)
+  ipAddress    String?      @map("ip_address") @db.Inet
+  status       DeviceStatus @default(offline)
+  lastHeartbeat DateTime?   @map("last_heartbeat")
+  browserType  BrowserType? @map("browser_type")
+  agentToken   String       @map("agent_token") @db.VarChar(255)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  tasks            Task[]
+  deviceFingerprints DeviceFingerprint[]
+
+  @@index([status])
+  @@index([lastHeartbeat])
+  @@map("devices")
+}
+
+model Task {
+  id          String      @id @default(uuid())
+  userId      String?     @map("user_id")
+  deviceId    String?     @map("device_id")
+  proxyId     String?     @map("proxy_id")
+  name        String      @db.VarChar(255)
+  type        TaskType
+  configJson  Json        @map("config_json")
+  status      TaskStatus  @default(pending)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  startedAt   DateTime?   @map("started_at")
+  completedAt DateTime?   @map("completed_at")
+  resultJson  Json?       @map("result_json")
+
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device       Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  proxy        Proxy?         @relation(fields: [proxyId], references: [id], onDelete: SetNull)
+  taskSteps    TaskStep[]
+  parsedData   ParsedData[]
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([type])
+  @@map("tasks")
+}
+
+model TaskStep {
+  id         String          @id @default(uuid())
+  taskId     String          @map("task_id")
+  stepType   String          @map("step_type") @db.VarChar(50)
+  stepConfig Json            @map("step_config")
+  order      Int
+  status     TaskStepStatus  @default(pending)
+  resultJson Json?           @map("result_json")
+  executedAt DateTime?       @map("executed_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([taskId, order])
+  @@index([status])
+  @@map("task_steps")
+}
+
+model Proxy {
+  id               String      @id @default(uuid())
+  host             String      @db.VarChar(255)
+  port             Int
+  username         String?     @db.VarChar(255)
+  passwordEncrypted String?    @map("password_encrypted") @db.VarChar(255)
+  type             ProxyType
+  status           ProxyStatus @default(active)
+  country          String?     @db.VarChar(2)
+  timezone         String?     @db.VarChar(50)
+  lastUsed         DateTime?   @map("last_used")
+  createdAt        DateTime    @default(now()) @map("created_at")
+
+  tasks Task[]
+
+  @@index([status])
+  @@index([type])
+  @@index([country])
+  @@index([lastUsed])
+  @@map("proxies")
+}
+
+model ParsedData {
+  id            String   @id @default(uuid())
+  taskId        String   @map("task_id")
+  url           String   @db.Text
+  adUrl         String?  @map("ad_url") @db.Text
+  adDomain      String?  @map("ad_domain") @db.VarChar(255)
+  screenshotPath String? @map("screenshot_path") @db.VarChar(500)
+  parsedAt      DateTime @default(now()) @map("parsed_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([adDomain])
+  @@index([parsedAt])
+  @@unique([taskId, adDomain])
+  @@map("parsed_data")
+}
+
+model SemrushData {
+  id        String   @id @default(uuid())
+  domain    String   @unique @db.VarChar(255)
+  dataJson  Json     @map("data_json")
+  checkedAt DateTime @default(now()) @map("checked_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("semrush_data")
+}
+
+model DeviceFingerprint {
+  id           String   @id @default(uuid())
+  deviceId     String   @map("device_id")
+  androidId    String   @map("android_id") @db.VarChar(16)
+  aaid         String?  @db.VarChar(36)
+  userAgent    String?  @map("user_agent") @db.Text
+  timezone     String?  @db.VarChar(50)
+  latitude     Decimal? @db.Decimal(10, 8)
+  longitude    Decimal? @db.Decimal(11, 8)
+  buildPropHash String? @map("build_prop_hash") @db.VarChar(64)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([deviceId, createdAt])
+  @@map("device_fingerprints")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  action       String   @db.VarChar(100)
+  resourceType String  @map("resource_type") @db.VarChar(50)
+  resourceId   String?  @map("resource_id") @db.Uuid
+  details      Json?
+  timestamp    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@index([timestamp])
+  @@index([action])
+  @@map("audit_logs")
+}
+

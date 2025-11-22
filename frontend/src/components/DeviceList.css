@@ -1,0 +1,22 @@
+.device-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1.5rem;
+}
+
+@media (min-width: 1200px) {
+  .device-list {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+@media (min-width: 1600px) {
+  .device-list {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+.device-list .empty-state {
+  grid-column: 1 / -1;
+}
+

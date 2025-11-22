@@ -1,0 +1,113 @@
+.device-form-container {
+  margin: 0;
+}
+
+.device-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.device-form h3 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+  font-size: 1.35rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.device-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.device-form label {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+}
+
+.device-form input,
+.device-form select {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.device-form input::placeholder {
+  color: var(--text-faint);
+}
+
+.device-form input:focus,
+.device-form select:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.device-form .error-message {
+  background: rgba(255, 139, 139, 0.08);
+  color: #ff8b8b;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 139, 139, 0.35);
+  font-size: 0.9rem;
+}
+
+.device-form .form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.device-form .cancel-btn,
+.device-form .submit-btn {
+  padding: 0.85rem 1.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.device-form .cancel-btn:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.device-form .submit-btn {
+  background: linear-gradient(120deg, #ffffff, #dcdce2);
+  color: #000;
+  border-color: transparent;
+  box-shadow: 0 12px 30px rgba(255, 255, 255, 0.25);
+}
+
+.device-form .submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.device-form .submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+

@@ -1,0 +1,17 @@
+.devices-page {
+  width: 100%;
+  gap: 2.5rem;
+}
+
+.devices-page .page-section {
+  padding: 2rem 2.5rem;
+}
+
+.devices-page .error {
+  margin-top: -1rem;
+}
+
+.devices-page .section-heading h3 {
+  letter-spacing: 0.25em;
+}
+
