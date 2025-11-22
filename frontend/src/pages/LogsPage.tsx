@@ -21,9 +21,14 @@ export default function LogsPage() {
     }
 
 
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-   
-    const wsHost = 'localhost:3000';
+    // Get API URL from environment or use current origin for production
+    const apiBaseUrl = import.meta.env.VITE_API_URL || 
+      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+    
+    // Extract host from API URL for WebSocket
+    const apiUrl = new URL(apiBaseUrl);
+    const wsProtocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = apiUrl.host;
     const wsUrl = `${wsProtocol}//${wsHost}/api/logs/stream${token ? `?token=${token}` : ''}`;
 
     console.log('Connecting to WebSocket:', wsUrl.replace(token || '', '***'));
@@ -118,7 +123,9 @@ export default function LogsPage() {
             {connected ? 'Online' : 'Offline'}
           </span>
           <p className="hero-description" style={{ textAlign: 'right' }}>
-            Endpoint: ws://localhost:3000/api/logs/stream
+            Endpoint: {import.meta.env.VITE_API_URL ? 
+              `${import.meta.env.VITE_API_URL.replace(/^https?:/, 'ws:')}/api/logs/stream` : 
+              'ws://localhost:3000/api/logs/stream'}
           </p>
         </div>
       </section>

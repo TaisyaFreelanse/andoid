@@ -1,0 +1,88 @@
+services:
+  # Backend Service (Fastify/Node.js)
+  - type: web
+    name: android-automation-backend
+    env: node
+    region: oregon  # или другой регион по вашему выбору
+    plan: starter  # или standard/pro для продакшена
+    buildCommand: |
+      cd backend &&
+      npm ci &&
+      npx prisma generate &&
+      npm run build
+    startCommand: |
+      cd backend &&
+      npx prisma migrate deploy &&
+      npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: android-automation-db
+          property: connectionString
+      # Redis - настройте вручную после создания сервиса Redis (Upstash, Redis Cloud и т.д.)
+      # Или используйте переменные окружения для внешнего Redis
+      - key: REDIS_HOST
+        sync: false  # Настроить вручную (например: redis-xxx.upstash.io)
+      - key: REDIS_PORT
+        sync: false  # Настроить вручную (обычно 6379 или 6380 для SSL)
+      - key: REDIS_PASSWORD
+        sync: false  # Настроить вручную
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: REFRESH_TOKEN_SECRET
+        generateValue: true
+      - key: REFRESH_TOKEN_EXPIRES_IN
+        value: 7d
+      # MinIO/S3 - используйте внешний S3 (AWS S3, DigitalOcean Spaces, Backblaze B2 и т.д.)
+      - key: MINIO_ENDPOINT
+        sync: false  # Настроить вручную (например: s3.amazonaws.com или sfo3.digitaloceanspaces.com)
+      - key: MINIO_PORT
+        value: 443
+      - key: MINIO_USE_SSL
+        value: "true"
+      - key: MINIO_ACCESS_KEY
+        sync: false  # Настроить вручную
+      - key: MINIO_SECRET_KEY
+        sync: false  # Настроить вручную
+      - key: MINIO_BUCKET_NAME
+        value: screenshots
+      - key: SEMRUSH_API_KEY
+        sync: false  # Настроить вручную
+      - key: CORS_ORIGIN
+        fromService:
+          name: android-automation-frontend
+          type: web
+          property: host
+          format: https://${host}
+      - key: LOG_LEVEL
+        value: info
+
+  # Frontend Service (React/Vite) - Static Site
+  - type: web
+    name: android-automation-frontend
+    env: static
+    buildCommand: |
+      cd frontend &&
+      npm ci &&
+      npm run build
+    staticPublishPath: ./frontend/dist
+    pullRequestPreviewsEnabled: true
+    # Примечание: VITE_API_URL должен быть установлен вручную в Render Dashboard
+    # так как переменные окружения для Static Site настраиваются отдельно
+    # Установите: VITE_API_URL=https://android-automation-backend.onrender.com
+
+databases:
+  - name: android-automation-db
+    plan: starter  # или standard/pro для продакшена
+    databaseName: android_automation
+    databaseUser: android_automation_user
+
