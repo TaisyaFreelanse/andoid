@@ -84,5 +84,4 @@ databases:
   - name: android-automation-db
     plan: starter  # или standard/pro для продакшена
     databaseName: android_automation
-    databaseUser: android_automation_user
 
