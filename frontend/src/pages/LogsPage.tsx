@@ -125,9 +125,15 @@ export default function LogsPage() {
             {connected ? 'Online' : 'Offline'}
           </span>
           <p className="hero-description" style={{ textAlign: 'right' }}>
-            Endpoint: {import.meta.env.VITE_API_URL ? 
-              `${import.meta.env.VITE_API_URL.replace(/^https?:/, 'ws:')}/api/logs/stream` : 
-              'ws://localhost:3000/api/logs/stream'}
+            Endpoint: {(() => {
+              const apiBaseUrl = import.meta.env.VITE_API_URL || 
+                (typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                  ? 'http://localhost:3000'
+                  : 'https://android-automation-backend.onrender.com');
+              const apiUrl = new URL(apiBaseUrl);
+              const wsProtocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+              return `${wsProtocol}//${apiUrl.host}/api/logs/stream`;
+            })()}
           </p>
         </div>
       </section>

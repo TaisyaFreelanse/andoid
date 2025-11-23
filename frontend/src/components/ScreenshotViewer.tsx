@@ -1,4 +1,5 @@
 import { ParsedData } from '../api/parsedData';
+import { API_BASE_URL } from '../api/client';
 import './ScreenshotViewer.css';
 
 interface ScreenshotViewerProps {
@@ -29,7 +30,7 @@ export default function ScreenshotViewer({ data }: ScreenshotViewerProps) {
             {item.screenshotPath && (
               <div className="screenshot-container">
                 <img
-                  src={`http://localhost:3000/api/artifacts/${item.screenshotPath}`}
+                  src={`${API_BASE_URL}/artifacts/${item.screenshotPath}`}
                   alt="Screenshot"
                   className="screenshot-image"
                   onError={(e) => {

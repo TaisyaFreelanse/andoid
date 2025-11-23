@@ -3,7 +3,7 @@ import { useAuthStore } from '../stores/authStore';
 
 // For production, VITE_API_URL must be set in Render Dashboard
 // For development, fallback to localhost or use proxy
-const API_BASE_URL = import.meta.env.VITE_API_URL 
+export const API_BASE_URL = import.meta.env.VITE_API_URL 
   ? `${import.meta.env.VITE_API_URL}/api`
   : (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
       ? 'http://localhost:3000/api' 
