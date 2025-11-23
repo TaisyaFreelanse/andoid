@@ -33,17 +33,28 @@ const fastify = Fastify({
 async function registerPlugins() {
   
   const corsOrigins = config.corsOrigin.split(',').map(o => o.trim());
+  logger.info({ corsOrigins }, 'CORS origins configured');
+  
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      
-      if (!origin) return cb(null, true);
-      
-      if (corsOrigins.includes(origin) || corsOrigins.includes('*')) {
+      // Разрешаем запросы без origin (например, Postman, curl)
+      if (!origin) {
+        logger.debug('CORS: Request without origin, allowing');
         return cb(null, true);
       }
+      
+      // Проверяем точное совпадение или wildcard
+      if (corsOrigins.includes(origin) || corsOrigins.includes('*')) {
+        logger.debug({ origin }, 'CORS: Origin allowed');
+        return cb(null, true);
+      }
+      
+      logger.warn({ origin, allowedOrigins: corsOrigins }, 'CORS: Origin not allowed');
       return cb(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   
@@ -65,8 +76,25 @@ async function registerPlugins() {
 
 async function registerRoutes() {
   
-  fastify.get('/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+  fastify.get('/health', async (_request, reply) => {
+    try {
+      // Проверяем подключение к БД
+      await prisma.$queryRaw`SELECT 1`;
+      
+      return reply.send({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        database: 'connected',
+      });
+    } catch (error) {
+      logger.error({ error }, 'Health check failed');
+      return reply.status(503).send({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        database: 'disconnected',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   });
 
   
@@ -87,12 +115,29 @@ async function registerRoutes() {
 
 
 fastify.setErrorHandler((error, request, reply) => {
-  logger.error({ error, requestId: request.id }, 'Request error');
+  const statusCode = error.statusCode || 500;
+  const message = error.message || 'Internal Server Error';
   
-  reply.status(error.statusCode || 500).send({
+  // Логируем детали ошибки
+  logger.error({ 
     error: {
-      message: error.message || 'Internal Server Error',
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      statusCode: error.statusCode,
+    },
+    requestId: request.id,
+    url: request.url,
+    method: request.method,
+  }, 'Request error');
+  
+  reply.status(statusCode).send({
+    error: {
+      message: config.nodeEnv === 'production' && statusCode === 500 
+        ? 'Internal Server Error' 
+        : message,
       code: error.code || 'INTERNAL_ERROR',
+      ...(config.nodeEnv === 'development' && { stack: error.stack }),
     },
   });
 });
@@ -118,6 +163,11 @@ process.on('SIGINT', gracefulShutdown);
 
 async function start() {
   try {
+    // Проверяем подключение к БД перед стартом
+    logger.info('Checking database connection...');
+    await prisma.$connect();
+    logger.info('Database connected successfully');
+    
     await registerPlugins();
     await registerRoutes();
     
@@ -127,6 +177,7 @@ async function start() {
     });
     
     logger.info(`Server listening on ${address}`);
+    logger.info({ corsOrigin: config.corsOrigin }, 'CORS configuration');
   } catch (error) {
     logger.error({ 
       error: error instanceof Error ? error.message : String(error),
