@@ -4,7 +4,7 @@ services:
     name: android-automation-backend
     env: node
     region: oregon  # или другой регион по вашему выбору
-    plan: free  # или starter/standard/pro для продакшена
+    plan: standard  # standard план для стабильной работы WebSocket
     rootDir: backend
     buildCommand: npm ci && npx prisma generate && npm run build
     startCommand: npm run migrate:start
