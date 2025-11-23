@@ -6,6 +6,11 @@ import { taskQueue } from './bull.config';
 import { logger } from '../utils/logger';
 
 export function setupBullBoard(fastify: FastifyInstance) {
+  if (!taskQueue) {
+    logger.warn('Bull Board not initialized: Redis/queue not configured');
+    return;
+  }
+
   try {
     const serverAdapter = new FastifyAdapter();
     serverAdapter.setBasePath('/admin/queues');

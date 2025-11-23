@@ -60,7 +60,22 @@ const getRetryConfig = (taskType: string) => {
   }
 };
 
+// Проверяем, настроен ли Redis
+const isRedisConfigured = () => {
+  return !!(
+    config.redis.host &&
+    config.redis.host !== 'localhost' &&
+    config.redis.port
+  );
+};
+
 export const createQueue = (name: string) => {
+  if (!isRedisConfigured()) {
+    logger.warn('Redis not configured, queue functionality will be disabled');
+    // Возвращаем заглушку, которая не будет работать, но не сломает приложение
+    return null as any;
+  }
+
   const queue = new Queue(name, {
     redis: {
       host: config.redis.host,
@@ -127,6 +142,11 @@ export const createQueue = (name: string) => {
 
 export const taskQueue = createQueue('tasks');
 
+// Проверка доступности очереди
+export const isQueueAvailable = () => {
+  return taskQueue !== null && isRedisConfigured();
+};
+
 
 export interface TaskJobData {
   taskId: string;
@@ -139,6 +159,11 @@ export interface TaskJobData {
 
 
 export async function addTaskToQueue(data: TaskJobData) {
+  if (!taskQueue || !isRedisConfigured()) {
+    logger.warn({ taskId: data.taskId }, 'Queue not available (Redis not configured), task will not be queued');
+    throw new Error('Task queue is not available. Please configure Redis to enable task queuing.');
+  }
+
   const retryConfig = getRetryConfig(data.type);
   const priority = data.priority || TaskPriority.NORMAL;
 

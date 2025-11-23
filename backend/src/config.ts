@@ -44,8 +44,7 @@ const requiredVars = [
   'DATABASE_URL',
   'JWT_SECRET',
   'REFRESH_TOKEN_SECRET',
-  'MINIO_ACCESS_KEY',
-  'MINIO_SECRET_KEY',
+  // MINIO и REDIS теперь опциональны
 ];
 
 for (const varName of requiredVars) {

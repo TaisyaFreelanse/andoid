@@ -31,6 +31,10 @@ async function processScreenshotTask(taskId: string, _config: any, _deviceId: st
 }
 
 export function setupTaskProcessor() {
+  if (!taskQueue) {
+    logger.warn('Task queue not available (Redis not configured), task processing disabled');
+    return;
+  }
  
   taskQueue.process(10, async (job: Job<TaskJobData>) => {
     const { taskId, type, config, deviceId, proxyId } = job.data;

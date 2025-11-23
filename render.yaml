@@ -42,17 +42,18 @@ services:
         generateValue: true
       - key: REFRESH_TOKEN_EXPIRES_IN
         value: 7d
-      # MinIO/S3 - используйте внешний S3 (AWS S3, DigitalOcean Spaces, Backblaze B2 и т.д.)
+      # MinIO/S3 - опционально, можно оставить пустым (файловое хранилище будет отключено)
+      # Используйте внешний S3 (AWS S3, DigitalOcean Spaces, Backblaze B2 и т.д.)
       - key: MINIO_ENDPOINT
-        sync: false  # Настроить вручную (например: s3.amazonaws.com или sfo3.digitaloceanspaces.com)
+        sync: false  # Оставить пустым, если не используете S3
       - key: MINIO_PORT
         value: 443
       - key: MINIO_USE_SSL
         value: "true"
       - key: MINIO_ACCESS_KEY
-        sync: false  # Настроить вручную
+        sync: false  # Оставить пустым, если не используете S3
       - key: MINIO_SECRET_KEY
-        sync: false  # Настроить вручную
+        sync: false  # Оставить пустым, если не используете S3
       - key: MINIO_BUCKET_NAME
         value: screenshots
       - key: SEMRUSH_API_KEY

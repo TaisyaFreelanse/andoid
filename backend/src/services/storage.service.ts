@@ -4,23 +4,48 @@ import { logger } from '../utils/logger';
 import { Readable } from 'stream';
 
 export class StorageService {
-  private client: Client;
+  private client: Client | null = null;
   private bucketName: string;
+  private isEnabled: boolean;
 
   constructor() {
-    this.client = new Client({
-      endPoint: config.minio.endpoint,
-      port: config.minio.port,
-      useSSL: config.minio.useSSL,
-      accessKey: config.minio.accessKey,
-      secretKey: config.minio.secretKey,
-    });
+    // Проверяем, настроен ли MinIO/S3
+    this.isEnabled = !!(
+      config.minio.accessKey &&
+      config.minio.secretKey &&
+      config.minio.endpoint &&
+      config.minio.endpoint !== 'localhost'
+    );
 
     this.bucketName = config.minio.bucketName;
-    this.ensureBucket();
+
+    if (this.isEnabled) {
+      try {
+        this.client = new Client({
+          endPoint: config.minio.endpoint,
+          port: config.minio.port,
+          useSSL: config.minio.useSSL,
+          accessKey: config.minio.accessKey,
+          secretKey: config.minio.secretKey,
+        });
+        this.ensureBucket();
+      } catch (error) {
+        logger.warn({ error }, 'Failed to initialize MinIO client, storage will be disabled');
+        this.isEnabled = false;
+        this.client = null;
+      }
+    } else {
+      logger.warn('MinIO/S3 not configured, file storage will be disabled');
+    }
+  }
+
+  private isAvailable(): boolean {
+    return this.isEnabled && this.client !== null;
   }
 
   private async ensureBucket() {
+    if (!this.client) return;
+    
     try {
       const exists = await this.client.bucketExists(this.bucketName);
       if (!exists) {
@@ -37,11 +62,16 @@ export class StorageService {
     fileName: string,
     contentType?: string
   ): Promise<string> {
+    if (!this.isAvailable()) {
+      logger.warn({ fileName }, 'Storage not available, file upload skipped');
+      throw new Error('Storage service is not configured');
+    }
+
     try {
       const objectName = fileName;
 
       if (Buffer.isBuffer(fileStream)) {
-        await this.client.putObject(
+        await this.client!.putObject(
           this.bucketName,
           objectName,
           fileStream,
@@ -51,7 +81,7 @@ export class StorageService {
           }
         );
       } else {
-        await this.client.putObject(
+        await this.client!.putObject(
           this.bucketName,
           objectName,
           fileStream,
@@ -70,8 +100,12 @@ export class StorageService {
   }
 
   async getPresignedUrl(objectName: string, expiresIn: number = 3600): Promise<string> {
+    if (!this.isAvailable()) {
+      throw new Error('Storage service is not configured');
+    }
+
     try {
-      const url = await this.client.presignedGetObject(
+      const url = await this.client!.presignedGetObject(
         this.bucketName,
         objectName,
         expiresIn
@@ -84,8 +118,13 @@ export class StorageService {
   }
 
   async deleteFile(objectName: string): Promise<void> {
+    if (!this.isAvailable()) {
+      logger.warn({ objectName }, 'Storage not available, file deletion skipped');
+      return;
+    }
+
     try {
-      await this.client.removeObject(this.bucketName, objectName);
+      await this.client!.removeObject(this.bucketName, objectName);
       logger.info({ objectName }, 'File deleted from MinIO');
     } catch (error) {
       logger.error({ error, objectName }, 'Error deleting file from MinIO');
@@ -94,8 +133,12 @@ export class StorageService {
   }
 
   async fileExists(objectName: string): Promise<boolean> {
+    if (!this.isAvailable()) {
+      return false;
+    }
+
     try {
-      await this.client.statObject(this.bucketName, objectName);
+      await this.client!.statObject(this.bucketName, objectName);
       return true;
     } catch (error) {
       return false;
