@@ -3,10 +3,10 @@ FROM minio/minio:latest
 # Создаем директорию для данных
 RUN mkdir -p /data
 
-# MinIO server - используем один порт 9000 для API и Console
-# На Render все порты проксируются через основной URL
-# MINIO_BROWSER_REDIRECT_URL настроен через переменные окружения
-CMD ["server", "/data", "--console-address", ":9000"]
+# MinIO server - используем только порт 9000 для API
+# Console отключена, так как на Render сложно настроить несколько портов
+# Для управления используйте MinIO Client (mc) или Backend API
+CMD ["server", "/data"]
 
 EXPOSE 9000
 
