@@ -113,6 +113,21 @@ SEMRUSH_API_KEY = (оставить пустым)
 3. В Render Dashboard добавьте:
    - `SEMRUSH_API_KEY` = ваш API key
 
+## Настройка Frontend (ВАЖНО!)
+
+После создания Blueprint, **обязательно** настройте переменную для Static Site:
+
+1. В Render Dashboard откройте Static Site `android-automation-frontend`
+2. Перейдите в **Environment**
+3. Добавьте переменную:
+   - **Key**: `VITE_API_URL`
+   - **Value**: `https://android-automation-backend.onrender.com`
+4. Сохраните (Render автоматически пересоберет Static Site)
+
+**Без этой переменной frontend будет пытаться делать запросы к своему собственному URL вместо backend!**
+
+Подробнее см. `RENDER-FRONTEND-SETUP.md`
+
 ## Проверка работы
 
 После настройки всех переменных:
@@ -130,8 +145,9 @@ SEMRUSH_API_KEY = (оставить пустым)
    Должен загрузиться интерфейс
 
 3. **Проверка подключения:**
-   - Попробуйте войти в систему
-   - Проверьте, что данные загружаются
+   - Откройте DevTools (F12) → Network
+   - Попробуйте залогиниться или открыть страницу Devices
+   - Проверьте, что запросы идут на `android-automation-backend.onrender.com`, а не на frontend URL
 
 ## Итого: Что делать СЕЙЧАС
 

@@ -21,9 +21,11 @@ export default function LogsPage() {
     }
 
 
-    // Get API URL from environment or use current origin for production
+    // Get API URL from environment or use backend URL for production
     const apiBaseUrl = import.meta.env.VITE_API_URL || 
-      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+      (typeof window !== 'undefined' && window.location.hostname === 'localhost'
+        ? 'http://localhost:3000'
+        : 'https://android-automation-backend.onrender.com');
     
     // Extract host from API URL for WebSocket
     const apiUrl = new URL(apiBaseUrl);

@@ -1,7 +1,13 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? '/api' : 'http://localhost:3000/api');
+// For production, VITE_API_URL must be set in Render Dashboard
+// For development, fallback to localhost or use proxy
+const API_BASE_URL = import.meta.env.VITE_API_URL 
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
+      ? 'http://localhost:3000/api' 
+      : 'https://android-automation-backend.onrender.com/api');
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
