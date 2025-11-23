@@ -4,7 +4,7 @@ services:
     name: android-automation-backend
     env: node
     region: oregon  # или другой регион по вашему выбору
-    plan: starter  # или standard/pro для продакшена
+    plan: free  # или starter/standard/pro для продакшена
     buildCommand: |
       cd backend &&
       npm ci &&
@@ -82,6 +82,6 @@ services:
 
 databases:
   - name: android-automation-db
-    plan: starter  # или standard/pro для продакшена
+    plan: basic-256mb  # или basic-1gb/basic-4gb для продакшена
     databaseName: android_automation
 
