@@ -73,6 +73,21 @@ services:
     # так как переменные окружения для Static Site настраиваются отдельно
     # Установите: VITE_API_URL=https://android-automation-backend.onrender.com
 
+  # MinIO Service (S3-compatible storage)
+  # Примечание: MinIO требует Docker runtime и persistent disk
+  # Создайте сервис вручную через Render Dashboard:
+  # 1. New -> Web Service
+  # 2. Connect ваш GitHub репозиторий
+  # 3. Name: android-automation-minio
+  # 4. Environment: Docker
+  # 5. Dockerfile Path: ./minio/Dockerfile
+  # 6. Root Directory: minio
+  # 7. Plan: Starter (минимум для persistent disk)
+  # 8. Environment Variables:
+  #    - MINIO_ROOT_USER: (сгенерируйте или установите вручную)
+  #    - MINIO_ROOT_PASSWORD: (сгенерируйте или установите вручную)
+  # 9. После создания добавьте Persistent Disk в Settings -> Disks
+
 databases:
   - name: android-automation-db
     plan: basic-256mb  # или basic-1gb/basic-4gb для продакшена
