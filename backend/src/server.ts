@@ -76,7 +76,7 @@ async function registerPlugins() {
 
 async function registerRoutes() {
   // Логируем все входящие запросы для диагностики WebSocket
-  fastify.addHook('onRequest', async (request, reply) => {
+  fastify.addHook('onRequest', async (request) => {
     if (request.url.includes('/api/logs/stream')) {
       logger.info({ 
         method: request.method,

@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { logger } from '../utils/logger';
-import { config } from '../config';
 
 
 const activeConnections = new Set<any>();
