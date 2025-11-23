@@ -5,6 +5,7 @@ import { requireRole } from '../middleware/rbac.middleware';
 import { createTaskSchema, updateTaskSchema } from '../utils/validator';
 import { logger } from '../utils/logger';
 import { addTaskToQueue, TaskPriority } from '../queue/bull.config';
+import { config } from '../config';
 
 export async function taskRoutes(fastify: FastifyInstance) {
   
@@ -86,47 +87,74 @@ export async function taskRoutes(fastify: FastifyInstance) {
   fastify.post(
     '/',
     { preHandler: [authenticate, requireRole('admin', 'operator')] },
-    async (request, _reply) => {
-      const authRequest = request as AuthenticatedRequest;
-      const body = createTaskSchema.parse(request.body);
-      const { priority, ...taskData } = request.body as any;
+    async (request, reply) => {
+      try {
+        const authRequest = request as AuthenticatedRequest;
+        const body = createTaskSchema.parse(request.body);
+        const { priority, ...taskData } = request.body as any;
 
-      const task = await prisma.task.create({
-        data: {
-          userId: authRequest.user.id,
-          deviceId: taskData.deviceId,
-          proxyId: taskData.proxyId,
-          name: body.name,
-          type: body.type,
-          configJson: body.configJson,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
+        const task = await prisma.task.create({
+          data: {
+            userId: authRequest.user.id,
+            deviceId: taskData.deviceId || null,
+            proxyId: taskData.proxyId || null,
+            name: body.name,
+            type: body.type,
+            configJson: body.configJson,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+              },
             },
           },
-        },
-      });
+        });
 
-      
-      const taskPriority = priority 
-        ? (TaskPriority[priority as keyof typeof TaskPriority] || TaskPriority.NORMAL)
-        : TaskPriority.NORMAL;
+        
+        const taskPriority = priority 
+          ? (TaskPriority[priority as keyof typeof TaskPriority] || TaskPriority.NORMAL)
+          : TaskPriority.NORMAL;
 
-      await addTaskToQueue({
-        taskId: task.id,
-        type: body.type,
-        config: body.configJson,
-        deviceId: taskData.deviceId,
-        proxyId: taskData.proxyId,
-        priority: taskPriority,
-      });
+        // Try to add to queue, but don't fail if queue is disabled
+        const queueResult = await addTaskToQueue({
+          taskId: task.id,
+          type: body.type,
+          config: body.configJson,
+          deviceId: taskData.deviceId,
+          proxyId: taskData.proxyId,
+          priority: taskPriority,
+        });
 
-      logger.info({ taskId: task.id, userId: authRequest.user.id, priority: taskPriority }, 'Task created and queued');
+        if (queueResult === null) {
+          logger.warn({ taskId: task.id }, 'Task queue is disabled, task created but not queued');
+        } else {
+          logger.info({ taskId: task.id, userId: authRequest.user.id, priority: taskPriority }, 'Task created and queued');
+        }
 
-      return { task };
+        return { task };
+      } catch (error) {
+        logger.error({ 
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            code: (error as any)?.code,
+          },
+          requestId: request.id,
+          body: request.body,
+        }, 'Error creating task');
+        
+        return reply.status(500).send({
+          error: {
+            message: 'Failed to create task',
+            code: 'CREATE_TASK_ERROR',
+            ...(config.nodeEnv === 'development' && {
+              details: error instanceof Error ? error.message : String(error),
+            }),
+          },
+        });
+      }
     }
   );
 

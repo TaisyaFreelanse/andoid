@@ -161,7 +161,7 @@ export interface TaskJobData {
 export async function addTaskToQueue(data: TaskJobData) {
   if (!taskQueue || !isRedisConfigured()) {
     logger.warn({ taskId: data.taskId }, 'Queue not available (Redis not configured), task will not be queued');
-    throw new Error('Task queue is not available. Please configure Redis to enable task queuing.');
+    return null;
   }
 
   const retryConfig = getRetryConfig(data.type);
