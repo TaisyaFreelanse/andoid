@@ -168,6 +168,22 @@ async function start() {
     await prisma.$connect();
     logger.info('Database connected successfully');
     
+    // Проверяем, что таблицы существуют
+    try {
+      await prisma.$queryRaw`SELECT 1 FROM users LIMIT 1`;
+      logger.info('Database tables exist');
+    } catch (error) {
+      logger.error({ 
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          code: 'MISSING_TABLES',
+        }
+      }, 'Database tables do not exist. Run migrations first!');
+      logger.error('To fix this, ensure migrations are run in startCommand: npx prisma migrate deploy');
+      await prisma.$disconnect();
+      process.exit(1);
+    }
+    
     await registerPlugins();
     await registerRoutes();
     

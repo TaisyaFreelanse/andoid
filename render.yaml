@@ -7,7 +7,7 @@ services:
     plan: free  # или starter/standard/pro для продакшена
     rootDir: backend
     buildCommand: npm ci && npx prisma generate && npm run build
-    startCommand: npx prisma migrate deploy && npm start
+    startCommand: npx prisma migrate deploy --schema=./prisma/schema.prisma && npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
