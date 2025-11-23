@@ -6,7 +6,7 @@ export default function LogsPage() {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const shouldReconnectRef = useRef(true);
 
   const connectWebSocket = () => {
