@@ -1,13 +1,38 @@
 import { FastifyInstance } from 'fastify';
 import { logger } from '../utils/logger';
+import { config } from '../config';
 
 
 const activeConnections = new Set<any>();
 
 export async function logsRoutes(fastify: FastifyInstance) {
   
-  fastify.get('/stream', { websocket: true }, (socket, request) => {
-    logger.info({ url: request.url, readyState: socket.readyState }, 'WebSocket connection handler called');
+  fastify.get('/stream', { websocket: true }, async (socket, request) => {
+    logger.info({ 
+      url: request.url, 
+      headers: {
+        upgrade: request.headers.upgrade,
+        connection: request.headers.connection,
+        'sec-websocket-key': request.headers['sec-websocket-key'],
+        'sec-websocket-version': request.headers['sec-websocket-version'],
+      },
+      query: request.query,
+      readyState: socket.readyState 
+    }, 'WebSocket connection handler called');
+    
+    // Проверяем токен из query параметра (опционально для WebSocket)
+    const token = (request.query as any)?.token;
+    if (token) {
+      try {
+        const decoded = await fastify.jwt.verify(token);
+        logger.info({ userId: (decoded as any).id, username: (decoded as any).username }, 'WebSocket authenticated via token');
+      } catch (error) {
+        logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'WebSocket token verification failed, allowing connection anyway');
+        // Не закрываем соединение, так как на Этапе 2 это не критично
+      }
+    } else {
+      logger.warn('WebSocket connection without token, allowing anyway (Stage 2)');
+    }
     
    
     activeConnections.add(socket);

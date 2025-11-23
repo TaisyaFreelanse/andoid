@@ -75,6 +75,22 @@ async function registerPlugins() {
 
 
 async function registerRoutes() {
+  // Логируем все входящие запросы для диагностики WebSocket
+  fastify.addHook('onRequest', async (request, reply) => {
+    if (request.url.includes('/api/logs/stream')) {
+      logger.info({ 
+        method: request.method,
+        url: request.url,
+        headers: {
+          upgrade: request.headers.upgrade,
+          connection: request.headers.connection,
+          'sec-websocket-key': request.headers['sec-websocket-key'],
+          'sec-websocket-version': request.headers['sec-websocket-version'],
+        },
+        query: request.query,
+      }, 'Incoming request to /api/logs/stream');
+    }
+  });
   
   fastify.get('/health', async (_request, reply) => {
     try {
