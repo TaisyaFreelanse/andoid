@@ -5,18 +5,40 @@ import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { createDeviceSchema, updateDeviceSchema } from '../utils/validator';
 import { logger } from '../utils/logger';
+import { config } from '../config';
 
 export async function deviceRoutes(fastify: FastifyInstance) {
   
   fastify.get(
     '/',
     { preHandler: [authenticate] },
-    async (_request, _reply) => {
-      const devices = await prisma.device.findMany({
-        orderBy: { createdAt: 'desc' },
-      });
+    async (request, reply) => {
+      try {
+        const devices = await prisma.device.findMany({
+          orderBy: { createdAt: 'desc' },
+        });
 
-      return { devices };
+        return { devices };
+      } catch (error) {
+        logger.error({ 
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            code: (error as any)?.code,
+          },
+          requestId: request.id,
+        }, 'Error fetching devices');
+        
+        return reply.status(500).send({
+          error: {
+            message: 'Failed to fetch devices',
+            code: 'FETCH_DEVICES_ERROR',
+            ...(config.nodeEnv === 'development' && {
+              details: error instanceof Error ? error.message : String(error),
+            }),
+          },
+        });
+      }
     }
   );
 
