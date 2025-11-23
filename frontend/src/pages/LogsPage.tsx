@@ -36,15 +36,12 @@ export default function LogsPage() {
     const wsHost = apiUrl.host;
     const wsUrl = `${wsProtocol}//${wsHost}/api/logs/stream${token ? `?token=${token}` : ''}`;
 
-    console.log('Connecting to WebSocket:', wsUrl.replace(token || '', '***'));
-
+    // Убираем лишние логи для более чистого консоли
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('WebSocket onopen fired');
       setConnected(true);
-      console.log('WebSocket connected - state updated');
       
       // Отправляем начальный ping
       try {
@@ -79,8 +76,7 @@ export default function LogsPage() {
         } else if (data.type === 'heartbeat') {
 
         } else if (data.type === 'pong') {
-          
-          console.log('Pong received from server');
+          // Pong получен - соединение активно, не логируем
         } else {
           
           setLogs((prev) => [...prev.slice(-999), `[${new Date().toLocaleTimeString()}] ${JSON.stringify(data)}`]);
@@ -97,7 +93,11 @@ export default function LogsPage() {
     };
 
     ws.onclose = (event) => {
-      console.log(`WebSocket closed: ${event.code} ${event.reason || ''}`);
+      // Коды 1005, 1006 - Render закрывает idle соединения (нормальное поведение)
+      // Не логируем эти коды, так как это ожидаемое поведение
+      if (event.code !== 1005 && event.code !== 1006) {
+        console.log(`WebSocket closed: ${event.code} ${event.reason || ''}`);
+      }
       setConnected(false);
       
       // Очищаем ping interval при закрытии соединения
@@ -109,13 +109,12 @@ export default function LogsPage() {
       // Автоматическое переподключение для кодов 1005, 1006 (Render закрывает idle соединения)
       // Коды 1000, 1001 - нормальное закрытие, не переподключаемся
       if (shouldReconnectRef.current && event.code !== 1000 && event.code !== 1001) {
-        console.log('Attempting to reconnect in 3 seconds...');
+        // Тихая переподключение без лишних логов
         reconnectTimeoutRef.current = setTimeout(() => {
           if (shouldReconnectRef.current) {
-            console.log('Reconnecting...');
             connectWebSocket();
           }
-        }, 3000);
+        }, 2000); // Уменьшаем задержку до 2 секунд для более быстрого переподключения
       }
     };
 
