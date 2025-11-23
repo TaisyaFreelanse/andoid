@@ -11,52 +11,41 @@ The table `public.users` does not exist in the current database.
 
 ## Решение
 
-### Вариант 1: Проверьте логи запуска (рекомендуется)
+### ✅ Автоматическое решение (уже применено)
 
-1. В Render Dashboard откройте Backend Service
-2. Перейдите в **Logs**
-3. Найдите строки с `prisma migrate deploy`
-4. Проверьте, есть ли ошибки при выполнении миграций
+Код обновлен для автоматического выполнения миграций при старте:
+- Добавлен npm script `migrate:start` в `package.json`
+- Обновлен `startCommand` в `render.yaml` для использования этого скрипта
+- Сервер проверяет наличие таблиц при старте и выдает понятную ошибку, если их нет
 
-### Вариант 2: Выполните миграции вручную через Render Shell
+**Просто закоммитьте и запушьте изменения - Render автоматически выполнит миграции при следующем деплое.**
+
+### Вариант 1: Выполните миграции вручную через Render Shell (быстрое решение)
+
+Если нужно исправить СЕЙЧАС, без ожидания деплоя:
 
 1. В Render Dashboard откройте Backend Service
 2. Перейдите в **Shell** (или используйте SSH)
 3. Выполните:
    ```bash
    cd backend
-   npx prisma migrate deploy
+   npx prisma migrate deploy --schema=./prisma/schema.prisma
    ```
-4. Проверьте вывод - должны быть сообщения о применении миграций
+4. Проверьте вывод - должны быть сообщения:
+   ```
+   Applying migration `20251119213000_init`
+   The following migration(s) have been applied:
+   - 20251119213000_init
+   ```
+5. Перезапустите сервис (Render Dashboard → Manual Deploy → Deploy latest commit)
 
-### Вариант 3: Проверьте startCommand
+### Вариант 2: Проверьте логи запуска
 
-Убедитесь, что в `render.yaml` команда запуска правильная:
-
-```yaml
-startCommand: npx prisma migrate deploy --schema=./prisma/schema.prisma && npm start
-```
-
-### Вариант 4: Создайте скрипт для миграций
-
-Создайте файл `backend/scripts/migrate-and-start.sh`:
-
-```bash
-#!/bin/sh
-set -e
-
-echo "Running Prisma migrations..."
-npx prisma migrate deploy
-
-echo "Starting server..."
-npm start
-```
-
-И обновите `render.yaml`:
-
-```yaml
-startCommand: sh scripts/migrate-and-start.sh
-```
+1. В Render Dashboard откройте Backend Service
+2. Перейдите в **Logs**
+3. Найдите строки с `Running Prisma migrations...` или `prisma migrate deploy`
+4. Проверьте, есть ли ошибки при выполнении миграций
+5. Если миграции не выполняются, используйте Вариант 1
 
 ## Проверка
 

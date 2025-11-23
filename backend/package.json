@@ -7,6 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "migrate:deploy": "prisma migrate deploy --schema=./prisma/schema.prisma",
+    "migrate:start": "npm run migrate:deploy && npm start",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
