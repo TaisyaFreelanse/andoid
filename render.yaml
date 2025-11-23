@@ -53,11 +53,7 @@ services:
       - key: SEMRUSH_API_KEY
         sync: false  # Настроить вручную
       - key: CORS_ORIGIN
-        fromService:
-          name: android-automation-frontend
-          type: web
-          property: host
-          format: https://${host}
+        value: https://android-automation-frontend.onrender.com
       - key: LOG_LEVEL
         value: info
 
