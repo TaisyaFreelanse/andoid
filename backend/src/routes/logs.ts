@@ -70,6 +70,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
     });
 
     
+    // Уменьшаем интервал heartbeat до 3 секунд, чтобы Render не закрывал idle соединения
     const interval = setInterval(() => {
       try {
         if (socket.readyState === 1) { 
@@ -87,7 +88,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
         clearInterval(interval);
         activeConnections.delete(socket);
       }
-    }, 5000);
+    }, 3000);
 
     
     socket.on('close', (code: number, reason: Buffer) => {

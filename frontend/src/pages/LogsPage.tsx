@@ -7,6 +7,7 @@ export default function LogsPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const pingIntervalRef = useRef<number | null>(null);
   const shouldReconnectRef = useRef(true);
 
   const connectWebSocket = () => {
@@ -45,12 +46,23 @@ export default function LogsPage() {
       setConnected(true);
       console.log('WebSocket connected - state updated');
       
-      
+      // Отправляем начальный ping
       try {
         ws.send(JSON.stringify({ type: 'ping' }));
       } catch (error) {
         console.error('Error sending ping:', error);
       }
+      
+      // Устанавливаем периодический ping каждые 2 секунды, чтобы Render не закрывал idle соединения
+      pingIntervalRef.current = window.setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          } catch (error) {
+            console.error('Error sending periodic ping:', error);
+          }
+        }
+      }, 2000);
     };
 
     ws.onmessage = (event) => {
@@ -88,6 +100,12 @@ export default function LogsPage() {
       console.log(`WebSocket closed: ${event.code} ${event.reason || ''}`);
       setConnected(false);
       
+      // Очищаем ping interval при закрытии соединения
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+      
       // Автоматическое переподключение для кодов 1005, 1006 (Render закрывает idle соединения)
       // Коды 1000, 1001 - нормальное закрытие, не переподключаемся
       if (shouldReconnectRef.current && event.code !== 1000 && event.code !== 1001) {
@@ -105,6 +123,11 @@ export default function LogsPage() {
       shouldReconnectRef.current = false;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
       }
       if (wsRef.current) {
         wsRef.current.close();
@@ -121,6 +144,11 @@ export default function LogsPage() {
       shouldReconnectRef.current = false;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
       }
       if (wsRef.current) {
         wsRef.current.close();
