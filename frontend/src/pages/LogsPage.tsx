@@ -6,8 +6,10 @@ export default function LogsPage() {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shouldReconnectRef = useRef(true);
 
-  useEffect(() => {
+  const connectWebSocket = () => {
     
     const authStorage = localStorage.getItem('auth-storage');
     let token: string | null = null;
@@ -86,18 +88,40 @@ export default function LogsPage() {
       console.log(`WebSocket closed: ${event.code} ${event.reason || ''}`);
       setConnected(false);
       
-      
-      if (event.code !== 1000 && event.code !== 1001) {
-        setTimeout(() => {
-          if (wsRef.current?.readyState === WebSocket.CLOSED || !wsRef.current) {
-            console.log('Attempting to reconnect...');
-
+      // Автоматическое переподключение для кодов 1005, 1006 (Render закрывает idle соединения)
+      // Коды 1000, 1001 - нормальное закрытие, не переподключаемся
+      if (shouldReconnectRef.current && event.code !== 1000 && event.code !== 1001) {
+        console.log('Attempting to reconnect in 3 seconds...');
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (shouldReconnectRef.current) {
+            console.log('Reconnecting...');
+            connectWebSocket();
           }
         }, 3000);
       }
     };
 
     return () => {
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  };
+
+  useEffect(() => {
+    shouldReconnectRef.current = true;
+    connectWebSocket();
+
+    return () => {
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
