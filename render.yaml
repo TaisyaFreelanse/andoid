@@ -5,15 +5,9 @@ services:
     env: node
     region: oregon  # или другой регион по вашему выбору
     plan: free  # или starter/standard/pro для продакшена
-    buildCommand: |
-      cd backend &&
-      npm ci &&
-      npx prisma generate &&
-      npm run build
-    startCommand: |
-      cd backend &&
-      npx prisma migrate deploy &&
-      npm start
+    rootDir: backend
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -71,11 +65,9 @@ services:
   - type: web
     name: android-automation-frontend
     env: static
-    buildCommand: |
-      cd frontend &&
-      npm ci &&
-      npm run build
-    staticPublishPath: ./frontend/dist
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
     pullRequestPreviewsEnabled: true
     # Примечание: VITE_API_URL должен быть установлен вручную в Render Dashboard
     # так как переменные окружения для Static Site настраиваются отдельно
