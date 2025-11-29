@@ -55,6 +55,7 @@ class ControllerService : LifecycleService() {
     private lateinit var deviceInfo: DeviceInfo
     private lateinit var apiClient: ApiClient
     private lateinit var proxyManager: ProxyManager
+    private lateinit var taskExecutor: TaskExecutor
     
     private var deviceId: String? = null
     private val isRegistered = AtomicBoolean(false)
@@ -62,7 +63,11 @@ class ControllerService : LifecycleService() {
     
     private var heartbeatJob: Job? = null
     private var taskPollingJob: Job? = null
+    private var taskExecutionJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    
+    // Task queue
+    private val pendingTasks = mutableListOf<ApiClient.TaskResponse>()
 
     // Callbacks for UI updates
     var onStatusChanged: ((ServiceStatus) -> Unit)? = null
@@ -94,6 +99,10 @@ class ControllerService : LifecycleService() {
         deviceInfo = DeviceInfo(this)
         proxyManager = ProxyManager()
         apiClient = ApiClient(getBackendUrl(), proxyManager)
+        taskExecutor = TaskExecutor(this, apiClient, proxyManager)
+        
+        // Setup task executor callbacks
+        setupTaskExecutorCallbacks()
         
         // Load saved device ID
         deviceId = prefs.getString(KEY_DEVICE_ID, null)
@@ -298,13 +307,105 @@ class ControllerService : LifecycleService() {
     private suspend fun pollTasks() {
         val id = deviceId ?: return
         
+        // Don't poll if already executing a task
+        if (taskExecutor.isExecutingTask()) {
+            return
+        }
+        
         val tasks = apiClient.getTasks(id)
         
-        tasks?.forEach { task ->
-            // Queue task for execution
-            // TODO: Send to TaskExecutor
+        tasks?.let { taskList ->
+            // Filter pending tasks
+            val newTasks = taskList.filter { task ->
+                task.status == "pending" && !pendingTasks.any { it.id == task.id }
+            }
+            
+            // Add to queue (sorted by priority)
+            pendingTasks.addAll(newTasks.sortedByDescending { it.priority })
+            
+            // Execute next task if not busy
+            executeNextTask()
         }
     }
+    
+    /**
+     * Execute next task from queue
+     */
+    private fun executeNextTask() {
+        if (taskExecutor.isExecutingTask() || pendingTasks.isEmpty()) {
+            return
+        }
+        
+        val task = pendingTasks.removeAt(0)
+        
+        taskExecutionJob = lifecycleScope.launch {
+            try {
+                updateNotification("Выполнение задачи: ${task.name}")
+                
+                val taskConfig = convertToTaskConfig(task)
+                val result = taskExecutor.executeTask(taskConfig)
+                
+                if (result.success) {
+                    updateNotification("Задача выполнена: ${task.name}")
+                } else {
+                    updateNotification("Ошибка задачи: ${result.error}")
+                    onError?.invoke("Ошибка задачи ${task.name}: ${result.error}")
+                }
+                
+            } catch (e: Exception) {
+                onError?.invoke("Ошибка выполнения задачи: ${e.message}")
+            }
+            
+            // Execute next task after completion
+            delay(1000) // Small delay between tasks
+            executeNextTask()
+        }
+    }
+    
+    /**
+     * Convert API task response to TaskExecutor config
+     */
+    private fun convertToTaskConfig(task: ApiClient.TaskResponse): TaskExecutor.TaskConfig {
+        val steps = task.steps?.map { step ->
+            TaskExecutor.TaskStep(
+                type = step.type,
+                config = step.config
+            )
+        } ?: emptyList()
+        
+        return TaskExecutor.TaskConfig(
+            id = task.id,
+            name = task.name,
+            type = task.type,
+            browser = task.config?.get("browser") as? String ?: "webview",
+            proxy = task.config?.get("proxy") as? String,
+            steps = steps,
+            maxRetries = task.config?.get("maxRetries") as? Int ?: 3,
+            continueOnError = task.config?.get("continueOnError") as? Boolean ?: false
+        )
+    }
+    
+    /**
+     * Setup task executor callbacks
+     */
+    private fun setupTaskExecutorCallbacks() {
+        taskExecutor.onTaskProgress = { taskId, current, total ->
+            updateNotification("Задача $taskId: шаг $current/$total")
+        }
+        
+        taskExecutor.onTaskCompleted = { taskId, result ->
+            if (result.success) {
+                updateNotification("Подключено • Задача $taskId выполнена")
+            } else {
+                updateNotification("Подключено • Ошибка: ${result.error}")
+            }
+        }
+        
+        taskExecutor.onError = { error ->
+            onError?.invoke(error)
+        }
+    }
+    
 
     /**
      * Reconnect after connection loss
