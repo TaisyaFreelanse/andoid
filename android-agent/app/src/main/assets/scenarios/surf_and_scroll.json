@@ -1,0 +1,123 @@
+{
+  "id": "surf_and_scroll",
+  "name": "Серфинг с прокруткой",
+  "description": "Имитация пользовательского серфинга с прокруткой страницы",
+  "version": "1.0",
+  "type": "surfing",
+  "browser": "webview",
+  "proxy": "auto",
+  "timeout": 60000,
+  "retries": 2,
+  "config": {
+    "human_like": true,
+    "random_delays": true,
+    "min_delay": 1000,
+    "max_delay": 5000
+  },
+  "steps": [
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "https://thebirdidentifier.com/",
+      "wait_for_load": true,
+      "timeout": 30000
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 2000,
+      "random_offset": 1000
+    },
+    {
+      "id": "step_3",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 300,
+      "smooth": true,
+      "duration": 500
+    },
+    {
+      "id": "step_4",
+      "type": "wait",
+      "duration": 1500,
+      "random_offset": 500
+    },
+    {
+      "id": "step_5",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 400,
+      "smooth": true
+    },
+    {
+      "id": "step_6",
+      "type": "wait",
+      "duration": 2000,
+      "random_offset": 1000
+    },
+    {
+      "id": "step_7",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 500,
+      "smooth": true
+    },
+    {
+      "id": "step_8",
+      "type": "wait",
+      "duration": 3000,
+      "random_offset": 1500
+    },
+    {
+      "id": "step_9",
+      "type": "scroll",
+      "direction": "up",
+      "pixels": 200,
+      "smooth": true
+    },
+    {
+      "id": "step_10",
+      "type": "wait",
+      "duration": 1000
+    },
+    {
+      "id": "step_11",
+      "type": "click",
+      "selector": "a.internal-link",
+      "optional": true,
+      "description": "Клик по внутренней ссылке если есть"
+    },
+    {
+      "id": "step_12",
+      "type": "wait",
+      "duration": 3000,
+      "condition": "page_loaded"
+    },
+    {
+      "id": "step_13",
+      "type": "scroll",
+      "direction": "down",
+      "percent": 50
+    },
+    {
+      "id": "step_14",
+      "type": "wait",
+      "duration": 2000
+    },
+    {
+      "id": "step_15",
+      "type": "screenshot",
+      "full_page": false,
+      "save_as": "surf_screenshot"
+    }
+  ],
+  "post_process": {
+    "log_visited_urls": true,
+    "track_time_on_page": true
+  },
+  "output": {
+    "format": "json",
+    "include_screenshots": true
+  }
+}
+

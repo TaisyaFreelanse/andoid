@@ -1,0 +1,72 @@
+{
+  "id": "uniqueness_device",
+  "name": "Уникализация устройства",
+  "description": "Полная уникализация устройства с изменением всех идентификаторов",
+  "version": "1.0",
+  "type": "uniqueness",
+  "requires_root": true,
+  "timeout": 60000,
+  "config": {
+    "backup_before": true,
+    "reboot_after": false,
+    "verify_changes": true
+  },
+  "actions": [
+    {
+      "id": "action_1",
+      "type": "regenerate_android_id",
+      "description": "Генерация нового Android ID"
+    },
+    {
+      "id": "action_2",
+      "type": "regenerate_aaid",
+      "description": "Сброс рекламного идентификатора"
+    },
+    {
+      "id": "action_3",
+      "type": "clear_chrome_data",
+      "description": "Очистка данных Chrome"
+    },
+    {
+      "id": "action_4",
+      "type": "clear_webview_data",
+      "description": "Очистка данных WebView"
+    },
+    {
+      "id": "action_5",
+      "type": "change_user_agent",
+      "ua": "random",
+      "description": "Установка случайного User-Agent"
+    },
+    {
+      "id": "action_6",
+      "type": "change_timezone",
+      "timezone": "auto",
+      "description": "Автоматическая установка таймзоны по прокси"
+    },
+    {
+      "id": "action_7",
+      "type": "change_location",
+      "latitude": "auto",
+      "longitude": "auto",
+      "description": "Автоматическая установка GPS по прокси"
+    },
+    {
+      "id": "action_8",
+      "type": "modify_build_prop",
+      "params": {
+        "ro.product.model": "random",
+        "ro.product.manufacturer": "random",
+        "ro.product.brand": "random"
+      },
+      "description": "Изменение параметров устройства"
+    }
+  ],
+  "post_process": {
+    "verify_android_id_changed": true,
+    "verify_user_agent_changed": true,
+    "log_new_fingerprint": true,
+    "send_to_backend": true
+  }
+}
+

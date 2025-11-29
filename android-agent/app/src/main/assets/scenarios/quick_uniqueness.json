@@ -1,0 +1,41 @@
+{
+  "id": "quick_uniqueness",
+  "name": "Быстрая уникализация",
+  "description": "Быстрый сброс основных идентификаторов без изменения build.prop",
+  "version": "1.0",
+  "type": "uniqueness",
+  "requires_root": true,
+  "timeout": 30000,
+  "config": {
+    "backup_before": false,
+    "reboot_after": false,
+    "verify_changes": true
+  },
+  "actions": [
+    {
+      "id": "action_1",
+      "type": "regenerate_android_id"
+    },
+    {
+      "id": "action_2",
+      "type": "regenerate_aaid"
+    },
+    {
+      "id": "action_3",
+      "type": "clear_chrome_data"
+    },
+    {
+      "id": "action_4",
+      "type": "clear_webview_data"
+    },
+    {
+      "id": "action_5",
+      "type": "change_user_agent",
+      "ua": "random"
+    }
+  ],
+  "post_process": {
+    "log_new_fingerprint": true
+  }
+}
+

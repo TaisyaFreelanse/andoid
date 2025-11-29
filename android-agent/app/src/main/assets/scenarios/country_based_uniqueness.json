@@ -1,0 +1,75 @@
+{
+  "id": "country_based_uniqueness",
+  "name": "Уникализация по стране",
+  "description": "Уникализация устройства с настройками под конкретную страну",
+  "version": "1.0",
+  "type": "uniqueness",
+  "requires_root": true,
+  "timeout": 60000,
+  "config": {
+    "backup_before": true,
+    "auto_detect_country": true,
+    "use_proxy_geolocation": true
+  },
+  "variables": {
+    "country_code": "US"
+  },
+  "actions": [
+    {
+      "id": "action_1",
+      "type": "detect_proxy_location",
+      "save_as": "proxy_location",
+      "description": "Определение геолокации прокси"
+    },
+    {
+      "id": "action_2",
+      "type": "regenerate_android_id"
+    },
+    {
+      "id": "action_3",
+      "type": "regenerate_aaid"
+    },
+    {
+      "id": "action_4",
+      "type": "clear_chrome_data"
+    },
+    {
+      "id": "action_5",
+      "type": "clear_webview_data"
+    },
+    {
+      "id": "action_6",
+      "type": "change_timezone",
+      "timezone": "auto",
+      "country_code": "{{country_code}}",
+      "description": "Установка таймзоны по стране"
+    },
+    {
+      "id": "action_7",
+      "type": "change_location",
+      "latitude": "auto",
+      "longitude": "auto",
+      "country_code": "{{country_code}}",
+      "description": "Установка GPS координат по стране"
+    },
+    {
+      "id": "action_8",
+      "type": "change_user_agent",
+      "ua": "random",
+      "locale": "{{country_code}}"
+    },
+    {
+      "id": "action_9",
+      "type": "change_locale",
+      "locale": "{{country_code}}",
+      "description": "Изменение локали устройства"
+    }
+  ],
+  "post_process": {
+    "verify_timezone_matches_proxy": true,
+    "verify_location_matches_proxy": true,
+    "log_new_fingerprint": true,
+    "send_to_backend": true
+  }
+}
+

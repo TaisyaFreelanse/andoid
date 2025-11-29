@@ -1,0 +1,89 @@
+{
+  "id": "multi_page_scraping",
+  "name": "Многостраничный парсинг",
+  "description": "Парсинг данных с нескольких страниц сайта с пагинацией",
+  "version": "1.0",
+  "type": "parsing",
+  "browser": "webview",
+  "proxy": "auto",
+  "timeout": 300000,
+  "retries": 3,
+  "config": {
+    "max_pages": 10,
+    "delay_between_pages": 2000,
+    "stop_on_empty": true
+  },
+  "steps": [
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "{{start_url}}",
+      "wait_for_load": true
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 2000
+    },
+    {
+      "id": "loop_start",
+      "type": "loop",
+      "max_iterations": 10,
+      "steps": [
+        {
+          "id": "loop_extract",
+          "type": "extract",
+          "selector": "{{item_selector}}",
+          "save_as": "items",
+          "multiple": true,
+          "append": true,
+          "extract_fields": {
+            "title": ".item-title",
+            "link": "a@href",
+            "price": ".price",
+            "description": ".description"
+          }
+        },
+        {
+          "id": "loop_screenshot",
+          "type": "screenshot",
+          "save_as": "page_{{loop_index}}"
+        },
+        {
+          "id": "loop_check_next",
+          "type": "condition",
+          "check": "element_exists",
+          "selector": "{{next_button_selector}}",
+          "on_false": "break"
+        },
+        {
+          "id": "loop_click_next",
+          "type": "click",
+          "selector": "{{next_button_selector}}"
+        },
+        {
+          "id": "loop_wait",
+          "type": "wait",
+          "duration": 2000,
+          "condition": "page_loaded"
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "start_url": "https://example.com/products",
+    "item_selector": ".product-item",
+    "next_button_selector": ".pagination .next, a[rel='next'], button.next-page"
+  },
+  "post_process": {
+    "deduplicate_items": true,
+    "validate_data": true,
+    "export_format": "json"
+  },
+  "output": {
+    "format": "json",
+    "include_screenshots": true,
+    "include_metadata": true
+  }
+}
+

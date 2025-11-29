@@ -1,0 +1,135 @@
+{
+  "id": "parse_ad_banners",
+  "name": "Парсинг рекламных баннеров",
+  "description": "Извлечение рекламных ссылок и скриншотов баннеров с сайта",
+  "version": "1.0",
+  "type": "parsing",
+  "browser": "chrome",
+  "proxy": "auto",
+  "timeout": 120000,
+  "retries": 3,
+  "config": {
+    "wait_for_ads": true,
+    "scroll_before_extract": true,
+    "take_screenshots": true
+  },
+  "steps": [
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "https://thebirdidentifier.com/",
+      "wait_for_load": true,
+      "timeout": 30000
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 3000,
+      "description": "Ожидание загрузки рекламы"
+    },
+    {
+      "id": "step_3",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 500,
+      "smooth": true
+    },
+    {
+      "id": "step_4",
+      "type": "wait",
+      "duration": 2000
+    },
+    {
+      "id": "step_5",
+      "type": "extract",
+      "selector": "a[href*='adurl']",
+      "attribute": "href",
+      "save_as": "ad_links",
+      "multiple": true
+    },
+    {
+      "id": "step_6",
+      "type": "extract",
+      "selector": "a[href*='googleads']",
+      "attribute": "href",
+      "save_as": "google_ad_links",
+      "multiple": true
+    },
+    {
+      "id": "step_7",
+      "type": "screenshot",
+      "full_page": false,
+      "save_as": "page_screenshot_1"
+    },
+    {
+      "id": "step_8",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 1000
+    },
+    {
+      "id": "step_9",
+      "type": "wait",
+      "duration": 2000
+    },
+    {
+      "id": "step_10",
+      "type": "extract",
+      "selector": "a[href*='adurl']",
+      "attribute": "href",
+      "save_as": "ad_links",
+      "multiple": true,
+      "append": true
+    },
+    {
+      "id": "step_11",
+      "type": "screenshot",
+      "full_page": false,
+      "save_as": "page_screenshot_2"
+    },
+    {
+      "id": "step_12",
+      "type": "navigate",
+      "url": "https://pickuplineinsider.com/",
+      "wait_for_load": true
+    },
+    {
+      "id": "step_13",
+      "type": "wait",
+      "duration": 3000
+    },
+    {
+      "id": "step_14",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 800
+    },
+    {
+      "id": "step_15",
+      "type": "extract",
+      "selector": "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick']",
+      "attribute": "href",
+      "save_as": "ad_links",
+      "multiple": true,
+      "append": true
+    },
+    {
+      "id": "step_16",
+      "type": "screenshot",
+      "full_page": true,
+      "save_as": "full_page_screenshot"
+    }
+  ],
+  "post_process": {
+    "extract_adurl": true,
+    "deduplicate_domains": true,
+    "check_semrush": true,
+    "save_to_backend": true
+  },
+  "output": {
+    "format": "json",
+    "include_screenshots": true,
+    "include_metadata": true
+  }
+}
+

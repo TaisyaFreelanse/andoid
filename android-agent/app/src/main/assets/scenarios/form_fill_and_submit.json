@@ -1,0 +1,130 @@
+{
+  "id": "form_fill_and_submit",
+  "name": "Заполнение и отправка формы",
+  "description": "Автоматическое заполнение формы и её отправка",
+  "version": "1.0",
+  "type": "automation",
+  "browser": "webview",
+  "proxy": "auto",
+  "timeout": 90000,
+  "retries": 2,
+  "config": {
+    "human_like_typing": true,
+    "typing_delay_ms": 50,
+    "validate_before_submit": true
+  },
+  "variables": {
+    "email": "test@example.com",
+    "name": "John Doe",
+    "phone": "+1234567890",
+    "message": "This is a test message"
+  },
+  "steps": [
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "{{target_url}}",
+      "wait_for_load": true
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 2000
+    },
+    {
+      "id": "step_3",
+      "type": "wait_for_element",
+      "selector": "form",
+      "timeout": 10000
+    },
+    {
+      "id": "step_4",
+      "type": "click",
+      "selector": "input[name='name'], input[id='name'], input[placeholder*='name' i]",
+      "description": "Клик на поле имени"
+    },
+    {
+      "id": "step_5",
+      "type": "input",
+      "selector": "input[name='name'], input[id='name'], input[placeholder*='name' i]",
+      "value": "{{name}}",
+      "clear_before": true
+    },
+    {
+      "id": "step_6",
+      "type": "wait",
+      "duration": 500
+    },
+    {
+      "id": "step_7",
+      "type": "input",
+      "selector": "input[name='email'], input[id='email'], input[type='email']",
+      "value": "{{email}}",
+      "clear_before": true
+    },
+    {
+      "id": "step_8",
+      "type": "wait",
+      "duration": 500
+    },
+    {
+      "id": "step_9",
+      "type": "input",
+      "selector": "input[name='phone'], input[id='phone'], input[type='tel']",
+      "value": "{{phone}}",
+      "clear_before": true,
+      "optional": true
+    },
+    {
+      "id": "step_10",
+      "type": "input",
+      "selector": "textarea[name='message'], textarea[id='message'], textarea",
+      "value": "{{message}}",
+      "clear_before": true,
+      "optional": true
+    },
+    {
+      "id": "step_11",
+      "type": "wait",
+      "duration": 1000
+    },
+    {
+      "id": "step_12",
+      "type": "screenshot",
+      "save_as": "form_filled"
+    },
+    {
+      "id": "step_13",
+      "type": "click",
+      "selector": "button[type='submit'], input[type='submit'], button:contains('Submit'), button:contains('Send')",
+      "description": "Отправка формы"
+    },
+    {
+      "id": "step_14",
+      "type": "wait",
+      "duration": 3000,
+      "condition": "page_loaded"
+    },
+    {
+      "id": "step_15",
+      "type": "screenshot",
+      "save_as": "form_submitted"
+    },
+    {
+      "id": "step_16",
+      "type": "extract",
+      "selector": ".success-message, .alert-success, .thank-you",
+      "save_as": "success_message",
+      "optional": true
+    }
+  ],
+  "post_process": {
+    "check_submission_success": true,
+    "log_response": true
+  },
+  "output": {
+    "format": "json",
+    "include_screenshots": true
+  }
+}
+
