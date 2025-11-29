@@ -1,11 +1,15 @@
 package com.automation.agent.network
 
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+import java.net.Authenticator
+import java.net.PasswordAuthentication
 import java.util.concurrent.TimeUnit
 
 /**
@@ -23,21 +27,51 @@ class ApiClient(
     private val proxyManager: ProxyManager? = null
 ) {
 
-    private val client: OkHttpClient
+    private var client: OkHttpClient
     private val gson = Gson()
+    private var authToken: String? = null
 
     init {
+        client = buildClient()
+    }
+
+    private fun buildClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
 
         // Add proxy if available
         proxyManager?.getCurrentProxy()?.let { proxy ->
             builder.proxy(proxyManager.createJavaProxy(proxy))
+            
+            // Add proxy authentication if needed
+            if (proxy.username != null && proxy.password != null) {
+                builder.proxyAuthenticator { _, response ->
+                    val credential = Credentials.basic(proxy.username, proxy.password)
+                    response.request.newBuilder()
+                        .header("Proxy-Authorization", credential)
+                        .build()
+                }
+            }
         }
 
-        client = builder.build()
+        return builder.build()
+    }
+
+    /**
+     * Update proxy and rebuild client
+     */
+    fun updateProxy() {
+        client = buildClient()
+    }
+
+    /**
+     * Set authentication token
+     */
+    fun setAuthToken(token: String) {
+        authToken = token
     }
 
     /**
@@ -50,43 +84,127 @@ class ApiClient(
         val request = Request.Builder()
             .url("$baseUrl/api/agent/register")
             .post(body)
+            .addHeader("Content-Type", "application/json")
             .build()
 
         return executeRequest(request) { response ->
-            gson.fromJson(response.body?.string(), DeviceRegistrationResponse::class.java)
+            if (response.isSuccessful) {
+                val responseBody = response.body?.string()
+                gson.fromJson(responseBody, DeviceRegistrationResponse::class.java)
+            } else {
+                null
+            }
         }
     }
 
     /**
      * Send heartbeat
      */
-    suspend fun sendHeartbeat(deviceId: String): Boolean {
-        val json = gson.toJson(HeartbeatRequest(deviceId))
+    suspend fun sendHeartbeat(deviceId: String, status: HeartbeatStatus? = null): HeartbeatResponse? {
+        val request = HeartbeatRequest(
+            deviceId = deviceId,
+            status = status?.name ?: "online",
+            timestamp = System.currentTimeMillis()
+        )
+        
+        val json = gson.toJson(request)
         val body = json.toRequestBody("application/json".toMediaType())
         
-        val request = Request.Builder()
+        val httpRequest = Request.Builder()
             .url("$baseUrl/api/agent/heartbeat")
             .post(body)
+            .addHeader("Content-Type", "application/json")
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
             .build()
 
-        return executeRequest(request) { response ->
-            response.isSuccessful
-        } ?: false
+        return executeRequest(httpRequest) { response ->
+            if (response.isSuccessful) {
+                val responseBody = response.body?.string()
+                try {
+                    gson.fromJson(responseBody, HeartbeatResponse::class.java)
+                } catch (e: Exception) {
+                    HeartbeatResponse(success = true)
+                }
+            } else {
+                null
+            }
+        }
     }
 
     /**
-     * Get tasks
+     * Send heartbeat (simple version returning boolean)
+     */
+    suspend fun sendHeartbeat(deviceId: String): Boolean {
+        val response = sendHeartbeat(deviceId, HeartbeatStatus.ONLINE)
+        return response?.success == true
+    }
+
+    /**
+     * Get tasks for device
      */
     suspend fun getTasks(deviceId: String): List<TaskResponse>? {
         val request = Request.Builder()
             .url("$baseUrl/api/agent/tasks?deviceId=$deviceId")
             .get()
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
             .build()
 
         return executeRequest(request) { response ->
-            val json = response.body?.string() ?: return@executeRequest null
-            gson.fromJson(json, Array<TaskResponse>::class.java).toList()
+            if (response.isSuccessful) {
+                val json = response.body?.string() ?: return@executeRequest null
+                val type = object : TypeToken<List<TaskResponse>>() {}.type
+                gson.fromJson(json, type)
+            } else {
+                null
+            }
         }
+    }
+
+    /**
+     * Get single task by ID
+     */
+    suspend fun getTask(taskId: String): TaskResponse? {
+        val request = Request.Builder()
+            .url("$baseUrl/api/agent/tasks/$taskId")
+            .get()
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
+            .build()
+
+        return executeRequest(request) { response ->
+            if (response.isSuccessful) {
+                val json = response.body?.string() ?: return@executeRequest null
+                gson.fromJson(json, TaskResponse::class.java)
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
+     * Update task status
+     */
+    suspend fun updateTaskStatus(taskId: String, status: String): Boolean {
+        val json = gson.toJson(mapOf("status" to status))
+        val body = json.toRequestBody("application/json".toMediaType())
+        
+        val request = Request.Builder()
+            .url("$baseUrl/api/agent/tasks/$taskId/status")
+            .put(body)
+            .addHeader("Content-Type", "application/json")
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
+            .build()
+
+        return executeRequest(request) { response ->
+            response.isSuccessful
+        } ?: false
     }
 
     /**
@@ -99,6 +217,10 @@ class ApiClient(
         val request = Request.Builder()
             .url("$baseUrl/api/agent/tasks/$taskId/result")
             .post(body)
+            .addHeader("Content-Type", "application/json")
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
             .build()
 
         return executeRequest(request) { response ->
@@ -111,16 +233,19 @@ class ApiClient(
      */
     suspend fun uploadScreenshot(
         deviceId: String,
-        taskId: String,
-        screenshotBytes: ByteArray
-    ): Boolean {
+        taskId: String?,
+        screenshotBytes: ByteArray,
+        filename: String = "screenshot.png"
+    ): UploadResponse? {
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("deviceId", deviceId)
-            .addFormDataPart("taskId", taskId)
+            .apply {
+                taskId?.let { addFormDataPart("taskId", it) }
+            }
             .addFormDataPart(
                 "screenshot",
-                "screenshot.png",
+                filename,
                 screenshotBytes.toRequestBody("image/png".toMediaType())
             )
             .build()
@@ -128,6 +253,39 @@ class ApiClient(
         val request = Request.Builder()
             .url("$baseUrl/api/agent/screenshot")
             .post(requestBody)
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
+            .build()
+
+        return executeRequest(request) { response ->
+            if (response.isSuccessful) {
+                val json = response.body?.string()
+                try {
+                    gson.fromJson(json, UploadResponse::class.java)
+                } catch (e: Exception) {
+                    UploadResponse(success = true, path = null)
+                }
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
+     * Send parsed data
+     */
+    suspend fun sendParsedData(data: ParsedDataRequest): Boolean {
+        val json = gson.toJson(data)
+        val body = json.toRequestBody("application/json".toMediaType())
+        
+        val request = Request.Builder()
+            .url("$baseUrl/api/agent/parsed-data")
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
             .build()
 
         return executeRequest(request) { response ->
@@ -135,6 +293,31 @@ class ApiClient(
         } ?: false
     }
 
+    /**
+     * Get proxy configuration
+     */
+    suspend fun getProxyConfig(deviceId: String): ProxyConfigResponse? {
+        val request = Request.Builder()
+            .url("$baseUrl/api/agent/proxy?deviceId=$deviceId")
+            .get()
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
+            .build()
+
+        return executeRequest(request) { response ->
+            if (response.isSuccessful) {
+                val json = response.body?.string() ?: return@executeRequest null
+                gson.fromJson(json, ProxyConfigResponse::class.java)
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
+     * Execute HTTP request with error handling
+     */
     private suspend fun <T> executeRequest(
         request: Request,
         block: suspend (Response) -> T?
@@ -142,35 +325,72 @@ class ApiClient(
         return withContext(Dispatchers.IO) {
             try {
                 val response = client.newCall(request).execute()
-                block(response)
+                response.use { block(it) }
+            } catch (e: IOException) {
+                null
             } catch (e: Exception) {
                 null
             }
         }
     }
 
-    // Data classes
+    // ==================== Data Classes ====================
+
     data class DeviceRegistrationRequest(
         val androidId: String,
         val aaid: String,
         val model: String,
         val manufacturer: String,
         val version: String,
-        val userAgent: String
+        val userAgent: String,
+        val brand: String? = null,
+        val sdkVersion: Int? = null,
+        val timezone: String? = null,
+        val screenWidth: Int? = null,
+        val screenHeight: Int? = null,
+        val language: String? = null,
+        val country: String? = null,
+        val isRooted: Boolean? = null
     )
 
     data class DeviceRegistrationResponse(
         val deviceId: String,
-        val status: String
+        val status: String,
+        val token: String? = null,
+        val message: String? = null
     )
 
     data class HeartbeatRequest(
-        val deviceId: String
+        val deviceId: String,
+        val status: String = "online",
+        val timestamp: Long = System.currentTimeMillis()
     )
+
+    data class HeartbeatResponse(
+        val success: Boolean,
+        val message: String? = null,
+        val commands: List<String>? = null
+    )
+
+    enum class HeartbeatStatus {
+        ONLINE,
+        BUSY,
+        IDLE,
+        ERROR
+    }
 
     data class TaskResponse(
         val id: String,
         val name: String,
+        val type: String,
+        val status: String,
+        val priority: Int = 0,
+        val config: Map<String, Any>? = null,
+        val steps: List<TaskStep>? = null,
+        val createdAt: String? = null
+    )
+
+    data class TaskStep(
         val type: String,
         val config: Map<String, Any>
     )
@@ -178,7 +398,34 @@ class ApiClient(
     data class TaskResultRequest(
         val success: Boolean,
         val data: Map<String, Any>? = null,
-        val error: String? = null
+        val error: String? = null,
+        val executionTime: Long? = null,
+        val screenshots: List<String>? = null
+    )
+
+    data class UploadResponse(
+        val success: Boolean,
+        val path: String?,
+        val url: String? = null
+    )
+
+    data class ParsedDataRequest(
+        val deviceId: String,
+        val taskId: String?,
+        val url: String,
+        val adUrl: String?,
+        val adDomain: String?,
+        val screenshotPath: String?,
+        val extractedData: Map<String, Any>? = null
+    )
+
+    data class ProxyConfigResponse(
+        val type: String, // http, https, socks5
+        val host: String,
+        val port: Int,
+        val username: String?,
+        val password: String?,
+        val country: String?,
+        val timezone: String?
     )
 }
-

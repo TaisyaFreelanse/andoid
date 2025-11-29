@@ -1,10 +1,25 @@
 package com.automation.agent.services
 
-import android.app.Service
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
+import com.automation.agent.MainActivity
+import com.automation.agent.R
+import com.automation.agent.network.ApiClient
+import com.automation.agent.network.ProxyManager
 import com.automation.agent.utils.DeviceInfo
+import kotlinx.coroutines.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * ControllerService - Background service for device registration and heartbeat
@@ -13,30 +28,96 @@ import com.automation.agent.utils.DeviceInfo
  * - Register device with backend on first launch
  * - Send heartbeat every 30 seconds
  * - Auto-reconnect on connection loss
+ * - Fetch and queue tasks for execution
  */
 class ControllerService : LifecycleService() {
 
-    private var isRegistered = false
-    private var heartbeatInterval: Long = 30_000 // 30 seconds
+    companion object {
+        private const val CHANNEL_ID = "automation_agent_channel"
+        private const val NOTIFICATION_ID = 1001
+        private const val PREFS_NAME = "agent_prefs"
+        private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_IS_REGISTERED = "is_registered"
+        
+        // Backend URL - configurable
+        private const val DEFAULT_BACKEND_URL = "https://android-automation-backend.onrender.com"
+        
+        // Heartbeat interval
+        private const val HEARTBEAT_INTERVAL_MS = 30_000L // 30 seconds
+        
+        // Retry settings
+        private const val MAX_RETRY_ATTEMPTS = 5
+        private const val INITIAL_RETRY_DELAY_MS = 1_000L // 1 second
+        private const val MAX_RETRY_DELAY_MS = 60_000L // 1 minute
+    }
+
+    private lateinit var prefs: SharedPreferences
+    private lateinit var deviceInfo: DeviceInfo
+    private lateinit var apiClient: ApiClient
+    private lateinit var proxyManager: ProxyManager
+    
+    private var deviceId: String? = null
+    private val isRegistered = AtomicBoolean(false)
+    private val isRunning = AtomicBoolean(false)
+    
+    private var heartbeatJob: Job? = null
+    private var taskPollingJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    // Callbacks for UI updates
+    var onStatusChanged: ((ServiceStatus) -> Unit)? = null
+    var onError: ((String) -> Unit)? = null
+
+    data class ServiceStatus(
+        val isRunning: Boolean,
+        val isRegistered: Boolean,
+        val deviceId: String?,
+        val lastHeartbeat: Long?,
+        val connectionStatus: ConnectionStatus
+    )
+
+    enum class ConnectionStatus {
+        CONNECTED,
+        DISCONNECTED,
+        CONNECTING,
+        ERROR
+    }
+
+    private var lastHeartbeatTime: Long? = null
+    private var connectionStatus = ConnectionStatus.DISCONNECTED
 
     override fun onCreate() {
         super.onCreate()
-        // TODO: Initialize service
+        
+        // Initialize components
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        deviceInfo = DeviceInfo(this)
+        proxyManager = ProxyManager()
+        apiClient = ApiClient(getBackendUrl(), proxyManager)
+        
+        // Load saved device ID
+        deviceId = prefs.getString(KEY_DEVICE_ID, null)
+        isRegistered.set(prefs.getBoolean(KEY_IS_REGISTERED, false))
+        
+        // Create notification channel
+        createNotificationChannel()
+        
+        // Acquire wake lock to keep service running
+        acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         
-        // Start foreground service
-        startForegroundService()
+        // Start as foreground service
+        startForeground(NOTIFICATION_ID, createNotification("Запуск..."))
         
-        // Register device if not registered
-        if (!isRegistered) {
-            registerDevice()
+        if (!isRunning.getAndSet(true)) {
+            // Start registration and heartbeat
+            lifecycleScope.launch {
+                startAgent()
+            }
         }
-        
-        // Start heartbeat
-        startHeartbeat()
         
         return START_STICKY
     }
@@ -46,26 +127,345 @@ class ControllerService : LifecycleService() {
         return null
     }
 
-    private fun startForegroundService() {
-        // TODO: Create notification channel and show foreground notification
-    }
-
-    private fun registerDevice() {
-        // TODO: Implement device registration
-        // - Collect device info (DeviceInfo)
-        // - Send POST /api/agent/register
-        // - Save device ID locally
-    }
-
-    private fun startHeartbeat() {
-        // TODO: Implement periodic heartbeat
-        // - Send POST /api/agent/heartbeat every 30 seconds
-        // - Handle connection errors and retry
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        // TODO: Cleanup resources
+        
+        isRunning.set(false)
+        heartbeatJob?.cancel()
+        taskPollingJob?.cancel()
+        releaseWakeLock()
+        
+        updateStatus(ConnectionStatus.DISCONNECTED)
+    }
+
+    /**
+     * Main agent startup sequence
+     */
+    private suspend fun startAgent() {
+        updateStatus(ConnectionStatus.CONNECTING)
+        
+        // Step 1: Register device if not registered
+        if (!isRegistered.get() || deviceId == null) {
+            val registered = registerDeviceWithRetry()
+            if (!registered) {
+                updateStatus(ConnectionStatus.ERROR)
+                onError?.invoke("Не удалось зарегистрировать устройство")
+                return
+            }
+        }
+        
+        // Step 2: Start heartbeat
+        startHeartbeat()
+        
+        // Step 3: Start task polling
+        startTaskPolling()
+        
+        updateStatus(ConnectionStatus.CONNECTED)
+    }
+
+    /**
+     * Register device with backend (with retry logic)
+     */
+    private suspend fun registerDeviceWithRetry(): Boolean {
+        var attempt = 0
+        var delay = INITIAL_RETRY_DELAY_MS
+        
+        while (attempt < MAX_RETRY_ATTEMPTS) {
+            attempt++
+            
+            updateNotification("Регистрация устройства (попытка $attempt)...")
+            
+            try {
+                val success = registerDevice()
+                if (success) {
+                    return true
+                }
+            } catch (e: Exception) {
+                onError?.invoke("Ошибка регистрации: ${e.message}")
+            }
+            
+            // Exponential backoff
+            if (attempt < MAX_RETRY_ATTEMPTS) {
+                delay(delay)
+                delay = minOf(delay * 2, MAX_RETRY_DELAY_MS)
+            }
+        }
+        
+        return false
+    }
+
+    /**
+     * Register device with backend
+     */
+    private suspend fun registerDevice(): Boolean {
+        val aaid = try {
+            deviceInfo.getAaid()
+        } catch (e: Exception) {
+            ""
+        }
+        
+        val request = ApiClient.DeviceRegistrationRequest(
+            androidId = deviceInfo.getAndroidId(),
+            aaid = aaid,
+            model = deviceInfo.getModel(),
+            manufacturer = deviceInfo.getManufacturer(),
+            version = deviceInfo.getVersion(),
+            userAgent = deviceInfo.getUserAgent()
+        )
+        
+        val response = apiClient.registerDevice(request)
+        
+        return if (response != null && response.deviceId.isNotEmpty()) {
+            // Save device ID
+            deviceId = response.deviceId
+            isRegistered.set(true)
+            
+            prefs.edit()
+                .putString(KEY_DEVICE_ID, response.deviceId)
+                .putBoolean(KEY_IS_REGISTERED, true)
+                .apply()
+            
+            updateNotification("Устройство зарегистрировано")
+            true
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Start periodic heartbeat
+     */
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        
+        heartbeatJob = lifecycleScope.launch {
+            while (isActive && isRunning.get()) {
+                try {
+                    sendHeartbeat()
+                } catch (e: Exception) {
+                    onError?.invoke("Ошибка heartbeat: ${e.message}")
+                    updateStatus(ConnectionStatus.ERROR)
+                    
+                    // Try to reconnect
+                    reconnect()
+                }
+                
+                delay(HEARTBEAT_INTERVAL_MS)
+            }
+        }
+    }
+
+    /**
+     * Send heartbeat to backend
+     */
+    private suspend fun sendHeartbeat() {
+        val id = deviceId ?: return
+        
+        val success = apiClient.sendHeartbeat(id)
+        
+        if (success) {
+            lastHeartbeatTime = System.currentTimeMillis()
+            updateStatus(ConnectionStatus.CONNECTED)
+            updateNotification("Подключено • Heartbeat OK")
+        } else {
+            throw Exception("Heartbeat failed")
+        }
+    }
+
+    /**
+     * Start task polling
+     */
+    private fun startTaskPolling() {
+        taskPollingJob?.cancel()
+        
+        taskPollingJob = lifecycleScope.launch {
+            while (isActive && isRunning.get()) {
+                try {
+                    pollTasks()
+                } catch (e: Exception) {
+                    onError?.invoke("Ошибка получения задач: ${e.message}")
+                }
+                
+                // Poll every 5 seconds
+                delay(5_000)
+            }
+        }
+    }
+
+    /**
+     * Poll for new tasks
+     */
+    private suspend fun pollTasks() {
+        val id = deviceId ?: return
+        
+        val tasks = apiClient.getTasks(id)
+        
+        tasks?.forEach { task ->
+            // Queue task for execution
+            // TODO: Send to TaskExecutor
+        }
+    }
+
+    /**
+     * Reconnect after connection loss
+     */
+    private suspend fun reconnect() {
+        updateNotification("Переподключение...")
+        updateStatus(ConnectionStatus.CONNECTING)
+        
+        var attempt = 0
+        var delay = INITIAL_RETRY_DELAY_MS
+        
+        while (attempt < MAX_RETRY_ATTEMPTS && isRunning.get()) {
+            attempt++
+            
+            try {
+                sendHeartbeat()
+                updateNotification("Подключено")
+                updateStatus(ConnectionStatus.CONNECTED)
+                return
+            } catch (e: Exception) {
+                // Continue retrying
+            }
+            
+            delay(delay)
+            delay = minOf(delay * 2, MAX_RETRY_DELAY_MS)
+        }
+        
+        // Failed to reconnect - try re-registration
+        if (isRunning.get()) {
+            isRegistered.set(false)
+            startAgent()
+        }
+    }
+
+    /**
+     * Create notification channel (Android 8.0+)
+     */
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Android Automation Agent",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Фоновый сервис автоматизации"
+                setShowBadge(false)
+            }
+            
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    /**
+     * Create foreground notification
+     */
+    private fun createNotification(status: String): Notification {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Android Automation Agent")
+            .setContentText(status)
+            .setSmallIcon(android.R.drawable.ic_menu_manage)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+
+    /**
+     * Update notification text
+     */
+    private fun updateNotification(status: String) {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, createNotification(status))
+    }
+
+    /**
+     * Update service status
+     */
+    private fun updateStatus(status: ConnectionStatus) {
+        connectionStatus = status
+        
+        onStatusChanged?.invoke(
+            ServiceStatus(
+                isRunning = isRunning.get(),
+                isRegistered = isRegistered.get(),
+                deviceId = deviceId,
+                lastHeartbeat = lastHeartbeatTime,
+                connectionStatus = status
+            )
+        )
+    }
+
+    /**
+     * Acquire wake lock to keep CPU running
+     */
+    private fun acquireWakeLock() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "AutomationAgent::ServiceWakeLock"
+        )
+        wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes max
+    }
+
+    /**
+     * Release wake lock
+     */
+    private fun releaseWakeLock() {
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+            }
+        }
+        wakeLock = null
+    }
+
+    /**
+     * Get backend URL from preferences or default
+     */
+    private fun getBackendUrl(): String {
+        return prefs.getString("backend_url", DEFAULT_BACKEND_URL) ?: DEFAULT_BACKEND_URL
+    }
+
+    /**
+     * Set backend URL
+     */
+    fun setBackendUrl(url: String) {
+        prefs.edit().putString("backend_url", url).apply()
+        apiClient = ApiClient(url, proxyManager)
+    }
+
+    /**
+     * Get current device ID
+     */
+    fun getDeviceId(): String? = deviceId
+
+    /**
+     * Get registration status
+     */
+    fun isDeviceRegistered(): Boolean = isRegistered.get()
+
+    /**
+     * Force re-registration
+     */
+    fun forceReRegister() {
+        lifecycleScope.launch {
+            isRegistered.set(false)
+            prefs.edit()
+                .remove(KEY_DEVICE_ID)
+                .putBoolean(KEY_IS_REGISTERED, false)
+                .apply()
+            deviceId = null
+            
+            startAgent()
+        }
     }
 }
-
