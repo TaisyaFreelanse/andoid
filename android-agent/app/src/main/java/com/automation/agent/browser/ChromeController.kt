@@ -1,7 +1,6 @@
 package com.automation.agent.browser
 
 import android.accessibilityservice.AccessibilityService
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -176,33 +175,35 @@ class ChromeController(
 
     // ==================== Interaction ====================
 
-    override suspend fun click(selector: String) {
+    override suspend fun click(selector: String): Boolean {
         // Use Accessibility API to find and click element
         val node = findNodeBySelector(selector)
-        if (node != null) {
-            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            Log.d(TAG, "Clicked element: $selector")
+        return if (node != null) {
+            val result = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            Log.d(TAG, "Clicked element: $selector, result: $result")
+            result
         } else {
             Log.w(TAG, "Element not found: $selector")
+            false
         }
     }
 
-    override suspend fun scroll(direction: String, pixels: Int) {
+    override suspend fun scroll(direction: String, pixels: Int): Boolean {
         val action = when (direction.lowercase()) {
             "down" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
             "up" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-            else -> return
+            else -> return false
         }
         
         // Find scrollable container and scroll
         val rootNode = getRootNode()
         val scrollable = findScrollableNode(rootNode)
-        scrollable?.performAction(action)
+        return scrollable?.performAction(action) ?: false
     }
 
-    override suspend fun input(selector: String, text: String) {
+    override suspend fun input(selector: String, text: String): Boolean {
         val node = findNodeBySelector(selector)
-        if (node != null) {
+        return if (node != null) {
             // Focus the node
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             delay(100)
@@ -214,33 +215,38 @@ class ChromeController(
                     AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                     text
                 )
-                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                val result = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                Log.d(TAG, "Input text to: $selector, result: $result")
+                result
+            } else {
+                Log.w(TAG, "Input requires API 21+")
+                false
             }
-            
-            Log.d(TAG, "Input text to: $selector")
         } else {
             Log.w(TAG, "Input element not found: $selector")
+            false
         }
     }
 
-    override suspend fun submit(selector: String?) {
-        if (selector != null) {
+    override suspend fun submit(selector: String?): Boolean {
+        return if (selector != null) {
             click(selector)
         } else {
             // Press Enter key via IME
             // This requires InputMethodService or Accessibility
             Log.w(TAG, "submit() without selector requires IME integration")
+            false
         }
     }
 
-    override suspend fun focus(selector: String) {
+    override suspend fun focus(selector: String): Boolean {
         val node = findNodeBySelector(selector)
-        node?.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        return node?.performAction(AccessibilityNodeInfo.ACTION_FOCUS) ?: false
     }
 
-    override suspend fun clear(selector: String) {
+    override suspend fun clear(selector: String): Boolean {
         val node = findNodeBySelector(selector)
-        if (node != null) {
+        return if (node != null) {
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             delay(100)
             
@@ -251,7 +257,11 @@ class ChromeController(
                     ""
                 )
                 node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            } else {
+                false
             }
+        } else {
+            false
         }
     }
 

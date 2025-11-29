@@ -8,14 +8,12 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.View
 import android.webkit.*
 import com.automation.agent.network.ProxyManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * WebViewController - Controls embedded WebView for parsing
@@ -215,7 +213,7 @@ class WebViewController(
 
     // ==================== Interaction ====================
 
-    override suspend fun click(selector: String) {
+    override suspend fun click(selector: String): Boolean {
         ensureInitialized()
         
         val script = """
@@ -223,17 +221,18 @@ class WebViewController(
                 var element = document.querySelector('$selector');
                 if (element) {
                     element.click();
-                    return 'clicked';
+                    return true;
                 }
-                return 'not_found';
+                return false;
             })();
         """.trimIndent()
         
         val result = evaluateJavascript(script)
         Log.d(TAG, "Click result for '$selector': $result")
+        return result?.contains("true") == true
     }
 
-    override suspend fun scroll(direction: String, pixels: Int) {
+    override suspend fun scroll(direction: String, pixels: Int): Boolean {
         ensureInitialized()
         
         val scrollY = when (direction.lowercase()) {
@@ -242,11 +241,12 @@ class WebViewController(
             else -> 0
         }
         
-        val script = "window.scrollBy(0, $scrollY);"
-        evaluateJavascript(script)
+        val script = "window.scrollBy(0, $scrollY); true;"
+        val result = evaluateJavascript(script)
+        return result?.contains("true") == true
     }
 
-    override suspend fun input(selector: String, text: String) {
+    override suspend fun input(selector: String, text: String): Boolean {
         ensureInitialized()
         
         val escapedText = text.replace("'", "\\'").replace("\n", "\\n")
@@ -258,16 +258,17 @@ class WebViewController(
                     element.value = '$escapedText';
                     element.dispatchEvent(new Event('input', { bubbles: true }));
                     element.dispatchEvent(new Event('change', { bubbles: true }));
-                    return 'success';
+                    return true;
                 }
-                return 'not_found';
+                return false;
             })();
         """.trimIndent()
         
-        evaluateJavascript(script)
+        val result = evaluateJavascript(script)
+        return result?.contains("true") == true
     }
 
-    override suspend fun submit(selector: String?) {
+    override suspend fun submit(selector: String?): Boolean {
         ensureInitialized()
         
         val script = if (selector != null) {
@@ -280,9 +281,9 @@ class WebViewController(
                         } else {
                             element.click();
                         }
-                        return 'submitted';
+                        return true;
                     }
-                    return 'not_found';
+                    return false;
                 })();
             """.trimIndent()
         } else {
@@ -291,17 +292,18 @@ class WebViewController(
                     var form = document.querySelector('form');
                     if (form) {
                         form.submit();
-                        return 'submitted';
+                        return true;
                     }
-                    return 'no_form';
+                    return false;
                 })();
             """.trimIndent()
         }
         
-        evaluateJavascript(script)
+        val result = evaluateJavascript(script)
+        return result?.contains("true") == true
     }
 
-    override suspend fun focus(selector: String) {
+    override suspend fun focus(selector: String): Boolean {
         ensureInitialized()
         
         val script = """
@@ -309,16 +311,17 @@ class WebViewController(
                 var element = document.querySelector('$selector');
                 if (element) {
                     element.focus();
-                    return 'focused';
+                    return true;
                 }
-                return 'not_found';
+                return false;
             })();
         """.trimIndent()
         
-        evaluateJavascript(script)
+        val result = evaluateJavascript(script)
+        return result?.contains("true") == true
     }
 
-    override suspend fun clear(selector: String) {
+    override suspend fun clear(selector: String): Boolean {
         ensureInitialized()
         
         val script = """
@@ -327,13 +330,14 @@ class WebViewController(
                 if (element) {
                     element.value = '';
                     element.dispatchEvent(new Event('input', { bubbles: true }));
-                    return 'cleared';
+                    return true;
                 }
-                return 'not_found';
+                return false;
             })();
         """.trimIndent()
         
-        evaluateJavascript(script)
+        val result = evaluateJavascript(script)
+        return result?.contains("true") == true
     }
 
     // ==================== Data Extraction ====================

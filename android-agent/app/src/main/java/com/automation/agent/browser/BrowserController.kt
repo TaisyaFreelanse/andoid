@@ -45,35 +45,41 @@ interface BrowserController {
     
     /**
      * Click element by CSS selector
+     * @return true if click was successful
      */
-    suspend fun click(selector: String)
+    suspend fun click(selector: String): Boolean
     
     /**
      * Scroll page
      * @param direction "up" or "down"
      * @param pixels amount to scroll
+     * @return true if scroll was successful
      */
-    suspend fun scroll(direction: String, pixels: Int)
+    suspend fun scroll(direction: String, pixels: Int): Boolean
     
     /**
      * Input text into element
+     * @return true if input was successful
      */
-    suspend fun input(selector: String, text: String)
+    suspend fun input(selector: String, text: String): Boolean
     
     /**
      * Submit form
+     * @return true if submit was successful
      */
-    suspend fun submit(selector: String? = null)
+    suspend fun submit(selector: String? = null): Boolean
     
     /**
      * Focus on element
+     * @return true if focus was successful
      */
-    suspend fun focus(selector: String)
+    suspend fun focus(selector: String): Boolean
     
     /**
      * Clear input field
+     * @return true if clear was successful
      */
-    suspend fun clear(selector: String)
+    suspend fun clear(selector: String): Boolean
     
     // ==================== Data Extraction ====================
     
@@ -163,4 +169,3 @@ interface BrowserController {
      */
     fun isInitialized(): Boolean
 }
-
