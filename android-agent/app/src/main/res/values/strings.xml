@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Android Automation Agent</string>
+    <string name="service_running">Сервис работает</string>
+    <string name="service_stopped">Сервис остановлен</string>
+    <string name="device_registered">Устройство зарегистрировано</string>
+    <string name="device_not_registered">Устройство не зарегистрировано</string>
+</resources>
+
