@@ -16,8 +16,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
-        // Build config fields
-        buildConfigField("String", "API_BASE_URL", "\"https://api.example.com\"")
+        // Build config fields - Production Render Backend
+        buildConfigField("String", "API_BASE_URL", "\"https://android-automation-backend.onrender.com\"")
         buildConfigField("int", "HEARTBEAT_INTERVAL_MS", "30000")
         buildConfigField("int", "TASK_POLL_INTERVAL_MS", "5000")
     }
@@ -76,12 +76,13 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
-            buildConfigField("String", "API_BASE_URL", "\"https://staging-api.example.com\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://android-automation-backend.onrender.com\"")
         }
         
         create("prod") {
             dimension = "environment"
-            buildConfigField("String", "API_BASE_URL", "\"https://api.example.com\"")
+            // Production backend on Render
+            buildConfigField("String", "API_BASE_URL", "\"https://android-automation-backend.onrender.com\"")
         }
     }
 
