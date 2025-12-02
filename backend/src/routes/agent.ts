@@ -88,6 +88,8 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
    
     // Найти задачи для этого устройства со статусом pending или assigned
+    logger.info({ deviceId, status: body.status }, 'Heartbeat received, searching for tasks');
+    
     const tasks = await prisma.task.findMany({
       where: {
         deviceId: deviceId,
@@ -96,6 +98,8 @@ export async function agentRoutes(fastify: FastifyInstance) {
       take: 1,
       orderBy: { createdAt: 'asc' },
     });
+    
+    logger.info({ deviceId, tasksFound: tasks.length, taskIds: tasks.map(t => t.id) }, 'Tasks found for device');
 
     // Если нашли задачу - обновить статус на assigned
     if (tasks.length > 0) {
