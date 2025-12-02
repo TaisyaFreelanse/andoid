@@ -33,6 +33,15 @@ export default function DevicesPage() {
     loadDevices();
   };
 
+  const handleDeleteDevice = async (id: string) => {
+    try {
+      await devicesApi.delete(id);
+      loadDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || 'Ошибка удаления устройства');
+    }
+  };
+
   if (loading) {
     return <div className="loading">Загрузка устройств...</div>;
   }
@@ -70,7 +79,7 @@ export default function DevicesPage() {
           <h3>Устройства</h3>
           <span className="section-meta">{devices.length} активных</span>
         </div>
-        <DeviceList devices={devices} />
+        <DeviceList devices={devices} onDelete={handleDeleteDevice} />
       </section>
     </div>
   );

@@ -4,9 +4,10 @@ import './DeviceCard.css';
 interface DeviceCardProps {
   device: Device;
   index?: number;
+  onDelete?: (id: string) => void;
 }
 
-export default function DeviceCard({ device, index = 0 }: DeviceCardProps) {
+export default function DeviceCard({ device, index = 0, onDelete }: DeviceCardProps) {
   
   const deviceNumber = String(index + 1).padStart(2, '0');
   
@@ -16,8 +17,20 @@ export default function DeviceCard({ device, index = 0 }: DeviceCardProps) {
   
   const centerNumber = device.id ? String(parseInt(device.id.slice(-2), 16) % 100).padStart(2, '0') : deviceNumber;
 
+  const handleDelete = () => {
+    if (onDelete && window.confirm(`Удалить устройство ${deviceModel}?`)) {
+      onDelete(device.id);
+    }
+  };
+
   return (
     <div className="device-phone">
+      {/* Delete button */}
+      {onDelete && (
+        <button className="device-delete-btn" onClick={handleDelete} title="Удалить устройство">
+          ✕
+        </button>
+      )}
       {}
       <div className="phone-status-bar">
         <div className="status-bar-left">
