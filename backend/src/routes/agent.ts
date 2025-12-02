@@ -11,25 +11,40 @@ export async function agentRoutes(fastify: FastifyInstance) {
   
   fastify.post('/register', async (request: FastifyRequest, _reply: FastifyReply) => {
     const body = registerDeviceSchema.parse(request.body);
+    const existingDeviceId = (body as any).existingDeviceId as string | undefined;
 
+    let device = null;
     
-    let device = await prisma.device.findUnique({
-      where: { androidId: body.androidId },
-    });
+    // First, try to find by existingDeviceId (for re-registration after reinstall)
+    if (existingDeviceId) {
+      device = await prisma.device.findUnique({
+        where: { id: existingDeviceId },
+      });
+    }
+    
+    // If not found by existingDeviceId, try by androidId
+    if (!device) {
+      device = await prisma.device.findUnique({
+        where: { androidId: body.androidId },
+      });
+    }
 
     if (device) {
-      
+      // Update existing device
       device = await prisma.device.update({
         where: { id: device.id },
         data: {
+          androidId: body.androidId, // Update androidId in case it changed
           aaid: body.aaid,
           browserType: body.browserType,
           status: 'online',
           lastHeartbeat: new Date(),
         },
       });
+      logger.info({ deviceId: device.id, androidId: device.androidId }, 'Device re-registered');
+      broadcastLog(`📱 Устройство переподключено: ${device.name || device.androidId}`, 'info');
     } else {
-      
+      // Create new device
       device = await prisma.device.create({
         data: {
           androidId: body.androidId,
@@ -40,10 +55,9 @@ export async function agentRoutes(fastify: FastifyInstance) {
           lastHeartbeat: new Date(),
         },
       });
+      logger.info({ deviceId: device.id, androidId: device.androidId }, 'New device registered');
+      broadcastLog(`📱 Новое устройство: ${device.name || device.androidId}`, 'info');
     }
-
-    logger.info({ deviceId: device.id, androidId: device.androidId }, 'Device registered');
-    broadcastLog(`📱 Устройство зарегистрировано: ${device.name || device.androidId}`, 'info');
 
     return {
       deviceId: device.id,
