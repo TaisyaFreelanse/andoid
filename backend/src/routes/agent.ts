@@ -87,17 +87,26 @@ export async function agentRoutes(fastify: FastifyInstance) {
     });
 
    
+    // Найти задачи для этого устройства со статусом pending или assigned
     const tasks = await prisma.task.findMany({
       where: {
-        OR: [
-          { deviceId: deviceId },
-          { deviceId: null, status: 'pending' },
-        ],
-        status: 'pending',
+        deviceId: deviceId,
+        status: { in: ['pending', 'assigned'] },
       },
       take: 1,
       orderBy: { createdAt: 'asc' },
     });
+
+    // Если нашли задачу - обновить статус на assigned
+    if (tasks.length > 0) {
+      await prisma.task.update({
+        where: { id: tasks[0].id },
+        data: { 
+          status: 'assigned',
+          startedAt: tasks[0].startedAt || new Date(),
+        },
+      });
+    }
 
     return {
       tasks: tasks.map((task) => ({
