@@ -18,6 +18,7 @@ import com.automation.agent.R
 import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
 import com.automation.agent.utils.DeviceInfo
+import com.automation.agent.utils.RootUtils
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -57,6 +58,8 @@ class ControllerService : LifecycleService() {
     private lateinit var apiClient: ApiClient
     private lateinit var proxyManager: ProxyManager
     private lateinit var taskExecutor: TaskExecutor
+    private lateinit var uniquenessService: UniquenessService
+    private lateinit var rootUtils: RootUtils
     
     private var deviceId: String? = null
     private val isRegistered = AtomicBoolean(false)
@@ -101,6 +104,8 @@ class ControllerService : LifecycleService() {
         proxyManager = ProxyManager()
         apiClient = ApiClient(getBackendUrl(), proxyManager)
         taskExecutor = TaskExecutor(this, apiClient, proxyManager)
+        rootUtils = RootUtils()
+        uniquenessService = UniquenessService(this, rootUtils)
         
         // Setup task executor callbacks
         setupTaskExecutorCallbacks()
@@ -108,6 +113,9 @@ class ControllerService : LifecycleService() {
         // Load saved device ID and token
         deviceId = prefs.getString(KEY_DEVICE_ID, null)
         isRegistered.set(prefs.getBoolean(KEY_IS_REGISTERED, false))
+        
+        // Set device ID in API client
+        deviceId?.let { apiClient.setDeviceId(it) }
         
         // Load and set auth token
         prefs.getString(KEY_AGENT_TOKEN, null)?.let { 
@@ -219,13 +227,17 @@ class ControllerService : LifecycleService() {
             ""
         }
         
+        // Get existing deviceId if available (for re-registration after reinstall)
+        val existingId = prefs.getString(KEY_DEVICE_ID, null)
+        
         val request = ApiClient.DeviceRegistrationRequest(
             androidId = deviceInfo.getAndroidId(),
             aaid = aaid,
             model = deviceInfo.getModel(),
             manufacturer = deviceInfo.getManufacturer(),
             version = deviceInfo.getVersion(),
-            userAgent = deviceInfo.getUserAgent()
+            userAgent = deviceInfo.getUserAgent(),
+            existingDeviceId = existingId  // Send existing ID for re-registration
         )
         
         val response = apiClient.registerDevice(request)
@@ -234,6 +246,9 @@ class ControllerService : LifecycleService() {
             // Save device ID and token
             deviceId = response.deviceId
             isRegistered.set(true)
+            
+            // Set device ID in API client
+            apiClient.setDeviceId(response.deviceId)
             
             // Set auth token in API client (prefer agentToken, fallback to token)
             val authToken = response.agentToken ?: response.token
@@ -371,25 +386,125 @@ class ControllerService : LifecycleService() {
         
         taskExecutionJob = lifecycleScope.launch {
             try {
-                updateNotification("Выполнение задачи: ${task.name}")
+                updateNotification("Выполнение задачи: ${task.name} (${task.type})")
                 
-                val taskConfig = convertToTaskConfig(task)
-                val result = taskExecutor.executeTask(taskConfig)
-                
-                if (result.success) {
-                    updateNotification("Задача выполнена: ${task.name}")
-                } else {
-                    updateNotification("Ошибка задачи: ${result.error}")
-                    onError?.invoke("Ошибка задачи ${task.name}: ${result.error}")
+                // Handle different task types
+                when (task.type.lowercase()) {
+                    "uniqueness" -> {
+                        // Execute uniqueness task via UniquenessService
+                        executeUniquenessTask(task)
+                    }
+                    "surfing", "parsing", "screenshot" -> {
+                        // Execute via TaskExecutor with type-specific handling
+                        val taskConfig = convertToTaskConfig(task)
+                        val result = taskExecutor.executeTask(taskConfig)
+                        
+                        if (result.success) {
+                            updateNotification("Задача выполнена: ${task.name}")
+                        } else {
+                            updateNotification("Ошибка задачи: ${result.error}")
+                            onError?.invoke("Ошибка задачи ${task.name}: ${result.error}")
+                        }
+                    }
+                    else -> {
+                        // Default: treat as surfing
+                        val taskConfig = convertToTaskConfig(task)
+                        val result = taskExecutor.executeTask(taskConfig)
+                        
+                        if (!result.success) {
+                            onError?.invoke("Ошибка задачи ${task.name}: ${result.error}")
+                        }
+                    }
                 }
                 
             } catch (e: Exception) {
                 onError?.invoke("Ошибка выполнения задачи: ${e.message}")
+                apiClient.updateTaskStatus(task.id, "failed")
             }
             
             // Execute next task after completion
             delay(1000) // Small delay between tasks
             executeNextTask()
+        }
+    }
+    
+    /**
+     * Execute uniqueness task
+     */
+    private suspend fun executeUniquenessTask(task: ApiClient.TaskResponse) {
+        try {
+            apiClient.updateTaskStatus(task.id, "running")
+            
+            val actions = task.config?.get("actions") as? List<Map<String, Any>> ?: emptyList()
+            val results = mutableMapOf<String, Any>()
+            
+            for (action in actions) {
+                val actionType = action["type"] as? String ?: continue
+                
+                updateNotification("Уникализация: $actionType")
+                
+                when (actionType) {
+                    "regenerate_android_id" -> {
+                        results["android_id"] = uniquenessService.regenerateAndroidId()
+                    }
+                    "regenerate_aaid" -> {
+                        results["aaid"] = uniquenessService.regenerateAaid()
+                    }
+                    "clear_chrome_data" -> {
+                        results["chrome_data"] = uniquenessService.clearChromeData()
+                    }
+                    "clear_webview_data" -> {
+                        results["webview_data"] = uniquenessService.clearWebViewData()
+                    }
+                    "change_user_agent" -> {
+                        val ua = action["ua"] as? String
+                        results["user_agent"] = uniquenessService.changeUserAgent(
+                            if (ua == "random") null else ua
+                        )
+                    }
+                    "change_timezone" -> {
+                        val tz = action["timezone"] as? String
+                        if (tz == "random") {
+                            results["timezone"] = uniquenessService.changeTimezoneByCountry("US")
+                        } else if (tz != null) {
+                            results["timezone"] = uniquenessService.changeTimezone(tz)
+                        }
+                    }
+                    "modify_build_prop" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val params = action["params"] as? Map<String, String> ?: emptyMap()
+                        results["build_prop"] = uniquenessService.modifyBuildProp(params)
+                    }
+                    "quick_reset" -> {
+                        val result = uniquenessService.quickReset()
+                        results["quick_reset"] = result.success
+                        results.putAll(result.results.mapValues { it.value.toString() })
+                    }
+                    "full_reset" -> {
+                        val country = action["country"] as? String
+                        val result = uniquenessService.fullReset(country)
+                        results["full_reset"] = result.success
+                        results.putAll(result.results.mapValues { it.value.toString() })
+                    }
+                }
+            }
+            
+            // Send result to backend
+            val success = results.values.all { it != false }
+            val request = ApiClient.TaskResultRequest(
+                success = success,
+                data = results,
+                error = if (!success) "Some uniqueness actions failed" else null,
+                executionTime = System.currentTimeMillis()
+            )
+            apiClient.sendTaskResult(task.id, request)
+            apiClient.updateTaskStatus(task.id, if (success) "completed" else "failed")
+            
+            updateNotification("Уникализация завершена: ${if (success) "успешно" else "с ошибками"}")
+            
+        } catch (e: Exception) {
+            apiClient.updateTaskStatus(task.id, "failed")
+            onError?.invoke("Ошибка уникализации: ${e.message}")
         }
     }
     

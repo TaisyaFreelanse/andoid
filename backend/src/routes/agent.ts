@@ -265,8 +265,10 @@ export async function agentRoutes(fastify: FastifyInstance) {
         },
       });
 
-      // Auto-save to parsed data for completed tasks
-      if (finalStatus === 'completed' && task) {
+      // Auto-save to parsed data ONLY for parsing tasks
+      const taskType = task.type?.toLowerCase() || '';
+      
+      if (finalStatus === 'completed' && task && taskType === 'parsing') {
         try {
           const configJson = task.configJson as any;
           const url = configJson?.url || configJson?.steps?.[0]?.url || 'unknown';
@@ -290,17 +292,23 @@ export async function agentRoutes(fastify: FastifyInstance) {
           
           // Log extracted data count
           const extractedCount = (titles?.length || 0) + (links?.length || 0);
-          logger.info({ taskId, titlesCount: titles?.length, linksCount: links?.length }, 'Parsed data auto-saved');
+          logger.info({ taskId, taskType, titlesCount: titles?.length, linksCount: links?.length }, 'Parsed data auto-saved');
           
           if (extractedCount > 0) {
-            broadcastLog(`💾 Артефакт сохранён: ${url} (${extractedCount} элементов)`, 'info');
+            broadcastLog(`💾 Артефакт парсинга сохранён: ${url} (${extractedCount} элементов)`, 'info');
           } else {
-            broadcastLog(`💾 Артефакт сохранён: ${url}`, 'info');
+            broadcastLog(`💾 Артефакт парсинга сохранён: ${url}`, 'info');
           }
         } catch (parseErr) {
           // Don't fail the request if parsed data save fails
           logger.warn({ taskId, error: parseErr }, 'Failed to auto-save parsed data');
         }
+      } else if (finalStatus === 'completed') {
+        // For non-parsing tasks, just log without saving to parsed_data
+        const actionVerb = taskType === 'surfing' ? '🏄 Серфинг' : 
+                          taskType === 'screenshot' ? '📸 Скриншот' : 
+                          taskType === 'uniqueness' ? '🔧 Уникализация' : '✅ Задача';
+        broadcastLog(`${actionVerb} завершён: ${task.name}`, 'info');
       }
 
       logger.info({ taskId, deviceId, status: finalStatus, resultKeys: Object.keys(resultData) }, 'Task result submitted via /tasks/:id/result');
