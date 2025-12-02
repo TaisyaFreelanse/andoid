@@ -234,10 +234,19 @@ class TaskExecutor(
             ?: return StepResult(success = false, error = "URL not specified")
         
         return try {
+            Log.d(TAG, "Navigating to: $url")
             browser.navigate(url)
             
-            // Wait for page load if specified
-            val waitAfter = (step.config["waitAfter"] as? Number)?.toLong() ?: 1000L
+            // Wait for page to fully load (default 3 seconds)
+            val waitAfter = (step.config["waitAfter"] as? Number)?.toLong() ?: 3000L
+            Log.d(TAG, "Waiting ${waitAfter}ms for page load...")
+            
+            // Try to wait for page load
+            val loadTimeout = (step.config["loadTimeout"] as? Number)?.toLong() ?: 10000L
+            val loaded = browser.waitForPageLoad(loadTimeout)
+            Log.d(TAG, "Page load complete: $loaded, current URL: ${browser.getCurrentUrl()}")
+            
+            // Additional wait after load
             delay(waitAfter)
             
             StepResult(
@@ -245,6 +254,7 @@ class TaskExecutor(
                 data = mapOf("url" to url, "currentUrl" to browser.getCurrentUrl())
             )
         } catch (e: Exception) {
+            Log.e(TAG, "Navigation failed: ${e.message}", e)
             StepResult(success = false, error = "Navigation failed: ${e.message}")
         }
     }
@@ -319,9 +329,13 @@ class TaskExecutor(
         val saveAs = step.config["save_as"] as? String ?: "extracted_data"
         val multiple = step.config["multiple"] as? Boolean ?: true
         
+        Log.d(TAG, "Extracting data: selector='$selector', attribute='$attribute', saveAs='$saveAs'")
+        
         return try {
             val parser = Parser(browser)
             val results = parser.extractByCss(selector, attribute)
+            
+            Log.d(TAG, "Extracted ${results.size} results for '$saveAs': ${results.take(3)}")
             
             // Save to execution results
             if (multiple) {

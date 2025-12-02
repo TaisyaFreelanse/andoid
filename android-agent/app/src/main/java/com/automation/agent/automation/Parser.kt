@@ -62,12 +62,29 @@ class Parser(private val browser: BrowserController) {
         
         return try {
             val elements = doc.select(selector)
+            Log.d(TAG, "Found ${elements.size} elements for selector '$selector'")
             
-            if (attribute != null) {
-                elements.map { it.attr(attribute) }.filter { it.isNotEmpty() }
-            } else {
-                elements.map { it.text() }.filter { it.isNotEmpty() }
+            val results = when {
+                // "text" or "textContent" means get text content, not HTML attribute
+                attribute == null || attribute == "text" || attribute == "textContent" -> {
+                    elements.map { it.text() }.filter { it.isNotEmpty() }
+                }
+                // "html" or "innerHTML" means get inner HTML
+                attribute == "html" || attribute == "innerHTML" -> {
+                    elements.map { it.html() }.filter { it.isNotEmpty() }
+                }
+                // "outerHtml" means get outer HTML
+                attribute == "outerHtml" -> {
+                    elements.map { it.outerHtml() }.filter { it.isNotEmpty() }
+                }
+                // Otherwise get the HTML attribute
+                else -> {
+                    elements.map { it.attr(attribute) }.filter { it.isNotEmpty() }
+                }
             }
+            
+            Log.d(TAG, "Extracted ${results.size} values from selector '$selector' with attribute '$attribute'")
+            results
         } catch (e: Exception) {
             Log.e(TAG, "CSS extraction failed for '$selector': ${e.message}")
             emptyList()
