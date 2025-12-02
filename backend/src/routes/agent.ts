@@ -182,7 +182,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
   fastify.post('/tasks/:taskId/result', async (request: FastifyRequest<{ Params: { taskId: string } }>, reply: FastifyReply) => {
     const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;
     const { taskId } = request.params;
-    const body = request.body as { status: string; result?: any; error?: string };
+    const body = request.body as { status?: string; success?: boolean; result?: any; data?: any; error?: string };
 
     if (!deviceId) {
       return reply.status(401).send({
@@ -190,34 +190,29 @@ export async function agentRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Map string status to TaskStatus enum
-    const statusMap: Record<string, 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled'> = {
-      pending: 'pending',
-      assigned: 'assigned',
-      running: 'running',
-      completed: 'completed',
-      failed: 'failed',
-      cancelled: 'cancelled',
-    };
-    const taskStatus = statusMap[body.status.toLowerCase()];
+    // Determine status from body - handle various formats from Android Agent
+    let finalStatus: 'completed' | 'failed' = 'completed';
     
-    if (!taskStatus) {
-      return reply.status(400).send({
-        error: { message: 'Invalid status', code: 'INVALID_STATUS' },
-      });
+    if (body.status) {
+      const statusLower = body.status.toLowerCase();
+      if (statusLower === 'failed' || statusLower === 'error') {
+        finalStatus = 'failed';
+      }
+    } else if (body.success === false || body.error) {
+      finalStatus = 'failed';
     }
 
     try {
       const task = await prisma.task.update({
         where: { id: taskId },
         data: {
-          status: taskStatus,
-          resultJson: body.result || null,
-          completedAt: taskStatus === 'completed' || taskStatus === 'failed' ? new Date() : undefined,
+          status: finalStatus,
+          resultJson: body.result || body.data || null,
+          completedAt: new Date(),
         },
       });
 
-      logger.info({ taskId, deviceId, status: taskStatus }, 'Task result submitted via /tasks/:id/result');
+      logger.info({ taskId, deviceId, status: finalStatus }, 'Task result submitted via /tasks/:id/result');
       return { success: true, task };
     } catch (error) {
       logger.error({ taskId, error }, 'Failed to submit task result');
