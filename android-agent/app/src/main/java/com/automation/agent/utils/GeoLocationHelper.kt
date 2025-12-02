@@ -36,6 +36,75 @@ class GeoLocationHelper(
         
         // Timeout
         private const val TIMEOUT_SECONDS = 10L
+        
+        // Country timezones mapping
+        private val COUNTRY_TIMEZONES = mapOf(
+            "US" to listOf("America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Phoenix", "America/Anchorage", "Pacific/Honolulu"),
+            "CA" to listOf("America/Toronto", "America/Vancouver", "America/Edmonton", "America/Winnipeg", "America/Halifax"),
+            "GB" to listOf("Europe/London"),
+            "DE" to listOf("Europe/Berlin"),
+            "FR" to listOf("Europe/Paris"),
+            "IT" to listOf("Europe/Rome"),
+            "ES" to listOf("Europe/Madrid"),
+            "NL" to listOf("Europe/Amsterdam"),
+            "BE" to listOf("Europe/Brussels"),
+            "AT" to listOf("Europe/Vienna"),
+            "CH" to listOf("Europe/Zurich"),
+            "PL" to listOf("Europe/Warsaw"),
+            "CZ" to listOf("Europe/Prague"),
+            "SE" to listOf("Europe/Stockholm"),
+            "NO" to listOf("Europe/Oslo"),
+            "DK" to listOf("Europe/Copenhagen"),
+            "FI" to listOf("Europe/Helsinki"),
+            "RU" to listOf("Europe/Moscow", "Asia/Yekaterinburg", "Asia/Novosibirsk", "Asia/Krasnoyarsk", "Asia/Irkutsk", "Asia/Vladivostok"),
+            "UA" to listOf("Europe/Kiev"),
+            "TR" to listOf("Europe/Istanbul"),
+            "GR" to listOf("Europe/Athens"),
+            "RO" to listOf("Europe/Bucharest"),
+            "HU" to listOf("Europe/Budapest"),
+            "PT" to listOf("Europe/Lisbon"),
+            "IE" to listOf("Europe/Dublin"),
+            "JP" to listOf("Asia/Tokyo"),
+            "KR" to listOf("Asia/Seoul"),
+            "CN" to listOf("Asia/Shanghai"),
+            "HK" to listOf("Asia/Hong_Kong"),
+            "TW" to listOf("Asia/Taipei"),
+            "SG" to listOf("Asia/Singapore"),
+            "MY" to listOf("Asia/Kuala_Lumpur"),
+            "TH" to listOf("Asia/Bangkok"),
+            "VN" to listOf("Asia/Ho_Chi_Minh"),
+            "ID" to listOf("Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura"),
+            "PH" to listOf("Asia/Manila"),
+            "IN" to listOf("Asia/Kolkata"),
+            "PK" to listOf("Asia/Karachi"),
+            "BD" to listOf("Asia/Dhaka"),
+            "AE" to listOf("Asia/Dubai"),
+            "SA" to listOf("Asia/Riyadh"),
+            "IL" to listOf("Asia/Jerusalem"),
+            "AU" to listOf("Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Perth", "Australia/Adelaide"),
+            "NZ" to listOf("Pacific/Auckland"),
+            "BR" to listOf("America/Sao_Paulo", "America/Rio_Branco", "America/Manaus"),
+            "AR" to listOf("America/Argentina/Buenos_Aires"),
+            "MX" to listOf("America/Mexico_City", "America/Tijuana", "America/Cancun"),
+            "CO" to listOf("America/Bogota"),
+            "CL" to listOf("America/Santiago"),
+            "PE" to listOf("America/Lima"),
+            "ZA" to listOf("Africa/Johannesburg"),
+            "EG" to listOf("Africa/Cairo"),
+            "NG" to listOf("Africa/Lagos"),
+            "KE" to listOf("Africa/Nairobi"),
+            "MA" to listOf("Africa/Casablanca"),
+            "DZ" to listOf("Africa/Algiers"),
+            "TN" to listOf("Africa/Tunis")
+        )
+        
+        fun getTimezoneForCountry(countryCode: String): String? {
+            return COUNTRY_TIMEZONES[countryCode.uppercase()]?.firstOrNull()
+        }
+        
+        fun getAllTimezonesForCountry(countryCode: String): List<String> {
+            return COUNTRY_TIMEZONES[countryCode.uppercase()] ?: emptyList()
+        }
     }
 
     private val client: OkHttpClient by lazy {
@@ -176,19 +245,7 @@ class GeoLocationHelper(
 
     // ==================== Timezone Helpers ====================
 
-    /**
-     * Get timezone for country code
-     */
-    fun getTimezoneForCountry(countryCode: String): String? {
-        return COUNTRY_TIMEZONES[countryCode.uppercase()]?.firstOrNull()
-    }
-
-    /**
-     * Get all timezones for country code
-     */
-    fun getAllTimezonesForCountry(countryCode: String): List<String> {
-        return COUNTRY_TIMEZONES[countryCode.uppercase()] ?: emptyList()
-    }
+    // getTimezoneForCountry and getAllTimezonesForCountry are now in companion object
 
     /**
      * Validate timezone string
@@ -266,65 +323,6 @@ class GeoLocationHelper(
     )
 
     // ==================== Country Timezones ====================
-
-    companion object {
-        private val COUNTRY_TIMEZONES = mapOf(
-            "US" to listOf("America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Phoenix", "America/Anchorage", "Pacific/Honolulu"),
-            "CA" to listOf("America/Toronto", "America/Vancouver", "America/Edmonton", "America/Winnipeg", "America/Halifax"),
-            "GB" to listOf("Europe/London"),
-            "DE" to listOf("Europe/Berlin"),
-            "FR" to listOf("Europe/Paris"),
-            "IT" to listOf("Europe/Rome"),
-            "ES" to listOf("Europe/Madrid"),
-            "NL" to listOf("Europe/Amsterdam"),
-            "BE" to listOf("Europe/Brussels"),
-            "AT" to listOf("Europe/Vienna"),
-            "CH" to listOf("Europe/Zurich"),
-            "PL" to listOf("Europe/Warsaw"),
-            "CZ" to listOf("Europe/Prague"),
-            "SE" to listOf("Europe/Stockholm"),
-            "NO" to listOf("Europe/Oslo"),
-            "DK" to listOf("Europe/Copenhagen"),
-            "FI" to listOf("Europe/Helsinki"),
-            "RU" to listOf("Europe/Moscow", "Asia/Yekaterinburg", "Asia/Novosibirsk", "Asia/Krasnoyarsk", "Asia/Irkutsk", "Asia/Vladivostok"),
-            "UA" to listOf("Europe/Kiev"),
-            "TR" to listOf("Europe/Istanbul"),
-            "GR" to listOf("Europe/Athens"),
-            "RO" to listOf("Europe/Bucharest"),
-            "HU" to listOf("Europe/Budapest"),
-            "PT" to listOf("Europe/Lisbon"),
-            "IE" to listOf("Europe/Dublin"),
-            "JP" to listOf("Asia/Tokyo"),
-            "KR" to listOf("Asia/Seoul"),
-            "CN" to listOf("Asia/Shanghai"),
-            "HK" to listOf("Asia/Hong_Kong"),
-            "TW" to listOf("Asia/Taipei"),
-            "SG" to listOf("Asia/Singapore"),
-            "MY" to listOf("Asia/Kuala_Lumpur"),
-            "TH" to listOf("Asia/Bangkok"),
-            "VN" to listOf("Asia/Ho_Chi_Minh"),
-            "ID" to listOf("Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura"),
-            "PH" to listOf("Asia/Manila"),
-            "IN" to listOf("Asia/Kolkata"),
-            "PK" to listOf("Asia/Karachi"),
-            "BD" to listOf("Asia/Dhaka"),
-            "AE" to listOf("Asia/Dubai"),
-            "SA" to listOf("Asia/Riyadh"),
-            "IL" to listOf("Asia/Jerusalem"),
-            "AU" to listOf("Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane", "Australia/Perth", "Australia/Adelaide"),
-            "NZ" to listOf("Pacific/Auckland"),
-            "BR" to listOf("America/Sao_Paulo", "America/Rio_Branco", "America/Manaus"),
-            "AR" to listOf("America/Argentina/Buenos_Aires"),
-            "MX" to listOf("America/Mexico_City", "America/Tijuana", "America/Cancun"),
-            "CO" to listOf("America/Bogota"),
-            "CL" to listOf("America/Santiago"),
-            "PE" to listOf("America/Lima"),
-            "ZA" to listOf("Africa/Johannesburg"),
-            "EG" to listOf("Africa/Cairo"),
-            "NG" to listOf("Africa/Lagos"),
-            "KE" to listOf("Africa/Nairobi"),
-            "MA" to listOf("Africa/Casablanca")
-        )
-    }
+    // Moved to companion object above
 }
 

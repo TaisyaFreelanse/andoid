@@ -401,9 +401,7 @@ class ControllerService : LifecycleService() {
             }
         }
         
-        taskExecutor.onError = { error ->
-            onError?.invoke(error)
-        }
+        // Error handling is done through task callbacks
     }
     
 
@@ -547,7 +545,7 @@ class ControllerService : LifecycleService() {
     /**
      * Get current device ID
      */
-    fun getDeviceId(): String? = deviceId
+    override fun getDeviceId(): String? = deviceId
 
     /**
      * Get registration status

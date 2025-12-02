@@ -30,6 +30,86 @@ class ProxyManager {
         private const val TAG = "ProxyManager"
         private const val HEALTH_CHECK_TIMEOUT = 10_000L
         private const val HEALTH_CHECK_URL = "https://api.ipify.org"
+
+        /**
+         * Parse SOCKS5 proxy string: socks5://host:port:username:password
+         */
+        fun parseSocks5(proxyString: String): ProxyConfig? {
+            // Format: socks5://host:port:username:password
+            val regex = Regex("socks5://([^:]+):(\\d+):([^:]+):(.+)")
+            val match = regex.find(proxyString)
+            
+            if (match != null) {
+                return ProxyConfig(
+                    type = ProxyType.SOCKS5,
+                    host = match.groupValues[1],
+                    port = match.groupValues[2].toInt(),
+                    username = match.groupValues[3],
+                    password = match.groupValues[4]
+                )
+            }
+            
+            // Alternative format: socks5://username:password@host:port
+            val altRegex = Regex("socks5://([^:]+):([^@]+)@([^:]+):(\\d+)")
+            val altMatch = altRegex.find(proxyString)
+            
+            if (altMatch != null) {
+                return ProxyConfig(
+                    type = ProxyType.SOCKS5,
+                    host = altMatch.groupValues[3],
+                    port = altMatch.groupValues[4].toInt(),
+                    username = altMatch.groupValues[1],
+                    password = altMatch.groupValues[2]
+                )
+            }
+            
+            return null
+        }
+
+        /**
+         * Parse HTTP proxy string: http://host:port or http://username:password@host:port
+         */
+        fun parseHttp(proxyString: String): ProxyConfig? {
+            // Format with auth: http://username:password@host:port
+            val authRegex = Regex("https?://([^:]+):([^@]+)@([^:]+):(\\d+)")
+            val authMatch = authRegex.find(proxyString)
+            
+            if (authMatch != null) {
+                return ProxyConfig(
+                    type = if (proxyString.startsWith("https")) ProxyType.HTTPS else ProxyType.HTTP,
+                    host = authMatch.groupValues[3],
+                    port = authMatch.groupValues[4].toInt(),
+                    username = authMatch.groupValues[1],
+                    password = authMatch.groupValues[2]
+                )
+            }
+            
+            // Format without auth: http://host:port
+            val simpleRegex = Regex("https?://([^:]+):(\\d+)")
+            val simpleMatch = simpleRegex.find(proxyString)
+            
+            if (simpleMatch != null) {
+                return ProxyConfig(
+                    type = if (proxyString.startsWith("https")) ProxyType.HTTPS else ProxyType.HTTP,
+                    host = simpleMatch.groupValues[1],
+                    port = simpleMatch.groupValues[2].toInt()
+                )
+            }
+            
+            return null
+        }
+
+        /**
+         * Parse any proxy string (auto-detect type)
+         */
+        fun parse(proxyString: String): ProxyConfig? {
+            return when {
+                proxyString.startsWith("socks5://") -> parseSocks5(proxyString)
+                proxyString.startsWith("http://") -> parseHttp(proxyString)
+                proxyString.startsWith("https://") -> parseHttp(proxyString)
+                else -> null
+            }
+        }
     }
 
     private val proxies = mutableListOf<ProxyConfig>()
@@ -334,86 +414,5 @@ class ProxyManager {
     }
 
     // ==================== Parsing ====================
-
-    companion object {
-        /**
-         * Parse SOCKS5 proxy string: socks5://host:port:username:password
-         */
-        fun parseSocks5(proxyString: String): ProxyConfig? {
-            // Format: socks5://host:port:username:password
-            val regex = Regex("socks5://([^:]+):(\\d+):([^:]+):(.+)")
-            val match = regex.find(proxyString)
-            
-            if (match != null) {
-                return ProxyConfig(
-                    type = ProxyType.SOCKS5,
-                    host = match.groupValues[1],
-                    port = match.groupValues[2].toInt(),
-                    username = match.groupValues[3],
-                    password = match.groupValues[4]
-                )
-            }
-            
-            // Alternative format: socks5://username:password@host:port
-            val altRegex = Regex("socks5://([^:]+):([^@]+)@([^:]+):(\\d+)")
-            val altMatch = altRegex.find(proxyString)
-            
-            if (altMatch != null) {
-                return ProxyConfig(
-                    type = ProxyType.SOCKS5,
-                    host = altMatch.groupValues[3],
-                    port = altMatch.groupValues[4].toInt(),
-                    username = altMatch.groupValues[1],
-                    password = altMatch.groupValues[2]
-                )
-            }
-            
-            return null
-        }
-
-        /**
-         * Parse HTTP proxy string: http://host:port or http://username:password@host:port
-         */
-        fun parseHttp(proxyString: String): ProxyConfig? {
-            // Format with auth: http://username:password@host:port
-            val authRegex = Regex("https?://([^:]+):([^@]+)@([^:]+):(\\d+)")
-            val authMatch = authRegex.find(proxyString)
-            
-            if (authMatch != null) {
-                return ProxyConfig(
-                    type = if (proxyString.startsWith("https")) ProxyType.HTTPS else ProxyType.HTTP,
-                    host = authMatch.groupValues[3],
-                    port = authMatch.groupValues[4].toInt(),
-                    username = authMatch.groupValues[1],
-                    password = authMatch.groupValues[2]
-                )
-            }
-            
-            // Format without auth: http://host:port
-            val simpleRegex = Regex("https?://([^:]+):(\\d+)")
-            val simpleMatch = simpleRegex.find(proxyString)
-            
-            if (simpleMatch != null) {
-                return ProxyConfig(
-                    type = if (proxyString.startsWith("https")) ProxyType.HTTPS else ProxyType.HTTP,
-                    host = simpleMatch.groupValues[1],
-                    port = simpleMatch.groupValues[2].toInt()
-                )
-            }
-            
-            return null
-        }
-
-        /**
-         * Parse any proxy string (auto-detect type)
-         */
-        fun parse(proxyString: String): ProxyConfig? {
-            return when {
-                proxyString.startsWith("socks5://") -> parseSocks5(proxyString)
-                proxyString.startsWith("http://") -> parseHttp(proxyString)
-                proxyString.startsWith("https://") -> parseHttp(proxyString)
-                else -> null
-            }
-        }
-    }
+    // Parsing functions moved to companion object above
 }

@@ -510,7 +510,11 @@ class TaskExecutor(
         if (isExecuting.get()) {
             Log.i(TAG, "Cancelling current task: $currentTaskId")
             isExecuting.set(false)
-            currentBrowser?.close()
+            currentBrowser?.let { browser ->
+                CoroutineScope(Dispatchers.Main).launch {
+                    browser.close()
+                }
+            }
             currentBrowser = null
         }
     }
