@@ -113,10 +113,11 @@ export async function agentRoutes(fastify: FastifyInstance) {
     }
 
     return {
+      success: true,
       tasks: tasks.map((task) => ({
         id: task.id,
         type: task.type,
-        configJson: task.configJson,
+        config: task.configJson, // Changed to 'config' for Android client compatibility
       })),
     };
   });
