@@ -332,8 +332,8 @@ class TaskExecutor(
         Log.d(TAG, "Extracting data: selector='$selector', attribute='$attribute', saveAs='$saveAs'")
         
         return try {
-            val parser = Parser(browser)
-            val results = parser.extractByCss(selector, attribute)
+            // Try JavaScript extraction first (more reliable for WebView)
+            val results = extractViaJavaScript(browser, selector, attribute)
             
             Log.d(TAG, "Extracted ${results.size} results for '$saveAs': ${results.take(3)}")
             
@@ -348,6 +348,7 @@ class TaskExecutor(
             
             // Check for adurl extraction
             if (step.config["extract_adurl"] == true) {
+                val parser = Parser(browser)
                 val adUrls = results.mapNotNull { parser.parseAdUrl(it) }
                 val existingAdUrls = executionResults["ad_urls"] as? MutableList<String> ?: mutableListOf()
                 existingAdUrls.addAll(adUrls)
@@ -474,6 +475,74 @@ class TaskExecutor(
             StepResult(success = true)
         } catch (e: Exception) {
             StepResult(success = false, error = "Upload failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Extract data via JavaScript (more reliable for WebView)
+     */
+    private suspend fun extractViaJavaScript(
+        browser: BrowserController, 
+        selector: String, 
+        attribute: String?
+    ): List<String> {
+        val attrScript = when {
+            attribute == null || attribute == "text" || attribute == "textContent" -> 
+                "el.textContent || el.innerText || ''"
+            attribute == "html" || attribute == "innerHTML" -> 
+                "el.innerHTML || ''"
+            attribute == "outerHtml" -> 
+                "el.outerHTML || ''"
+            else -> 
+                "el.getAttribute('$attribute') || ''"
+        }
+        
+        val script = """
+            (function() {
+                try {
+                    var elements = document.querySelectorAll('$selector');
+                    var results = [];
+                    elements.forEach(function(el) {
+                        var value = $attrScript;
+                        if (value && value.trim()) {
+                            results.push(value.trim());
+                        }
+                    });
+                    return JSON.stringify(results);
+                } catch(e) {
+                    return JSON.stringify([]);
+                }
+            })();
+        """.trimIndent()
+        
+        val result = browser.evaluateJavascript(script)
+        Log.d(TAG, "JavaScript extraction result: ${result?.take(200)}")
+        
+        return try {
+            if (result.isNullOrEmpty() || result == "null" || result == "[]") {
+                emptyList()
+            } else {
+                // Parse JSON array
+                val cleanResult = result.trim()
+                    .removePrefix("\"")
+                    .removeSuffix("\"")
+                    .replace("\\\"", "\"")
+                    .replace("\\n", "\n")
+                
+                if (cleanResult.startsWith("[") && cleanResult.endsWith("]")) {
+                    // Simple JSON array parsing
+                    cleanResult
+                        .removeSurrounding("[", "]")
+                        .split("\",\"")
+                        .map { it.trim().removePrefix("\"").removeSuffix("\"") }
+                        .filter { it.isNotEmpty() }
+                } else {
+                    emptyList()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse JavaScript result: ${e.message}")
+            emptyList()
         }
     }
 
