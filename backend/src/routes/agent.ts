@@ -5,6 +5,7 @@ import { registerDeviceSchema, heartbeatSchema, taskResultSchema } from '../util
 import { logger } from '../utils/logger';
 import { storageService } from '../services/storage.service';
 import { semrushService } from '../services/semrush.service';
+import { broadcastLog } from './logs';
 
 export async function agentRoutes(fastify: FastifyInstance) {
   
@@ -42,6 +43,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
     }
 
     logger.info({ deviceId: device.id, androidId: device.androidId }, 'Device registered');
+    broadcastLog(`📱 Устройство зарегистрировано: ${device.name || device.androidId}`, 'info');
 
     return {
       deviceId: device.id,
@@ -100,6 +102,10 @@ export async function agentRoutes(fastify: FastifyInstance) {
     });
     
     logger.info({ deviceId, tasksFound: tasks.length, taskIds: tasks.map(t => t.id) }, 'Tasks found for device');
+    
+    if (tasks.length > 0) {
+      broadcastLog(`📋 Задач для устройства: ${tasks.length} (${tasks.map(t => t.name).join(', ')})`, 'info');
+    }
 
     // Если нашли задачу - обновить статус на assigned
     if (tasks.length > 0) {
@@ -169,6 +175,10 @@ export async function agentRoutes(fastify: FastifyInstance) {
       });
 
       logger.info({ taskId, deviceId, status: taskStatus }, 'Task status updated');
+      
+      const statusEmoji = taskStatus === 'running' ? '🔄' : taskStatus === 'completed' ? '✅' : taskStatus === 'failed' ? '❌' : '📝';
+      broadcastLog(`${statusEmoji} Задача ${task.name}: ${taskStatus}`, taskStatus === 'failed' ? 'error' : 'info');
+      
       return { success: true, task };
     } catch (error) {
       logger.error({ taskId, error }, 'Failed to update task status');
@@ -231,6 +241,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
           });
           
           logger.info({ taskId }, 'Parsed data auto-saved');
+          broadcastLog(`💾 Артефакт сохранён: ${url}`, 'info');
         } catch (parseErr) {
           // Don't fail the request if parsed data save fails
           logger.warn({ taskId, error: parseErr }, 'Failed to auto-save parsed data');
@@ -238,6 +249,10 @@ export async function agentRoutes(fastify: FastifyInstance) {
       }
 
       logger.info({ taskId, deviceId, status: finalStatus }, 'Task result submitted via /tasks/:id/result');
+      
+      const resultEmoji = finalStatus === 'completed' ? '🎉' : '💥';
+      broadcastLog(`${resultEmoji} Результат задачи ${task.name}: ${finalStatus}`, finalStatus === 'failed' ? 'error' : 'info');
+      
       return { success: true, task };
     } catch (error) {
       logger.error({ taskId, error }, 'Failed to submit task result');
