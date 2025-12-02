@@ -112,7 +112,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
       });
     }
 
-    return {
+    const response = {
       success: true,
       tasks: tasks.map((task) => ({
         id: task.id,
@@ -122,6 +122,10 @@ export async function agentRoutes(fastify: FastifyInstance) {
         config: task.configJson,
       })),
     };
+    
+    logger.info({ responsePreview: JSON.stringify(response).substring(0, 500), responseSize: JSON.stringify(response).length }, 'Heartbeat response');
+    
+    return response;
   });
 
   
