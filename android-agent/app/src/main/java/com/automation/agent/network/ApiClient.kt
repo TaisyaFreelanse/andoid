@@ -103,7 +103,7 @@ class ApiClient(
     suspend fun sendHeartbeat(deviceId: String, status: HeartbeatStatus? = null): HeartbeatResponse? {
         val request = HeartbeatRequest(
             deviceId = deviceId,
-            status = status?.name ?: "online",
+            status = status?.name?.lowercase() ?: "online",
             timestamp = System.currentTimeMillis()
         )
         
@@ -114,8 +114,12 @@ class ApiClient(
             .url("$baseUrl/api/agent/heartbeat")
             .post(body)
             .addHeader("Content-Type", "application/json")
+            .addHeader("x-device-id", deviceId)
             .apply {
-                authToken?.let { addHeader("Authorization", "Bearer $it") }
+                authToken?.let { 
+                    addHeader("x-agent-token", it)
+                    addHeader("Authorization", "Bearer $it") 
+                }
             }
             .build()
 
@@ -355,7 +359,8 @@ class ApiClient(
 
     data class DeviceRegistrationResponse(
         val deviceId: String,
-        val status: String,
+        val status: String? = null,
+        val agentToken: String? = null,
         val token: String? = null,
         val message: String? = null
     )
@@ -367,9 +372,10 @@ class ApiClient(
     )
 
     data class HeartbeatResponse(
-        val success: Boolean,
+        val success: Boolean = true,
         val message: String? = null,
-        val commands: List<String>? = null
+        val commands: List<String>? = null,
+        val tasks: List<TaskResponse>? = null
     )
 
     enum class HeartbeatStatus {

@@ -37,6 +37,7 @@ class ControllerService : LifecycleService() {
         private const val NOTIFICATION_ID = 1001
         private const val PREFS_NAME = "agent_prefs"
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_AGENT_TOKEN = "agent_token"
         private const val KEY_IS_REGISTERED = "is_registered"
         
         // Backend URL - configurable
@@ -104,9 +105,14 @@ class ControllerService : LifecycleService() {
         // Setup task executor callbacks
         setupTaskExecutorCallbacks()
         
-        // Load saved device ID
+        // Load saved device ID and token
         deviceId = prefs.getString(KEY_DEVICE_ID, null)
         isRegistered.set(prefs.getBoolean(KEY_IS_REGISTERED, false))
+        
+        // Load and set auth token
+        prefs.getString(KEY_AGENT_TOKEN, null)?.let { 
+            apiClient.setAuthToken(it) 
+        }
         
         // Create notification channel
         createNotificationChannel()
@@ -225,12 +231,17 @@ class ControllerService : LifecycleService() {
         val response = apiClient.registerDevice(request)
         
         return if (response != null && response.deviceId.isNotEmpty()) {
-            // Save device ID
+            // Save device ID and token
             deviceId = response.deviceId
             isRegistered.set(true)
             
+            // Set auth token in API client (prefer agentToken, fallback to token)
+            val authToken = response.agentToken ?: response.token
+            authToken?.let { apiClient.setAuthToken(it) }
+            
             prefs.edit()
                 .putString(KEY_DEVICE_ID, response.deviceId)
+                .putString(KEY_AGENT_TOKEN, authToken)
                 .putBoolean(KEY_IS_REGISTERED, true)
                 .apply()
             
@@ -265,17 +276,37 @@ class ControllerService : LifecycleService() {
     }
 
     /**
-     * Send heartbeat to backend
+     * Send heartbeat to backend and process tasks from response
      */
     private suspend fun sendHeartbeat() {
         val id = deviceId ?: return
         
-        val success = apiClient.sendHeartbeat(id)
+        val response = apiClient.sendHeartbeat(id, ApiClient.HeartbeatStatus.ONLINE)
         
-        if (success) {
+        if (response != null) {
             lastHeartbeatTime = System.currentTimeMillis()
             updateStatus(ConnectionStatus.CONNECTED)
-            updateNotification("Подключено • Heartbeat OK")
+            
+            // Process tasks from heartbeat response
+            response.tasks?.let { taskList ->
+                if (taskList.isNotEmpty()) {
+                    updateNotification("Получено задач: ${taskList.size}")
+                    
+                    // Add new tasks to queue
+                    taskList.forEach { task ->
+                        if (!pendingTasks.any { it.id == task.id }) {
+                            pendingTasks.add(task)
+                        }
+                    }
+                    
+                    // Start executing if not already
+                    if (!taskExecutor.isExecutingTask() && pendingTasks.isNotEmpty()) {
+                        executeNextTask()
+                    }
+                } else {
+                    updateNotification("Подключено • Heartbeat OK")
+                }
+            } ?: updateNotification("Подключено • Heartbeat OK")
         } else {
             throw Exception("Heartbeat failed")
         }
