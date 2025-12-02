@@ -141,17 +141,34 @@ export async function agentRoutes(fastify: FastifyInstance) {
       });
     }
 
+    // Map string status to TaskStatus enum
+    const statusMap: Record<string, 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled'> = {
+      pending: 'pending',
+      assigned: 'assigned',
+      running: 'running',
+      completed: 'completed',
+      failed: 'failed',
+      cancelled: 'cancelled',
+    };
+    const taskStatus = statusMap[body.status.toLowerCase()];
+    
+    if (!taskStatus) {
+      return reply.status(400).send({
+        error: { message: 'Invalid status', code: 'INVALID_STATUS' },
+      });
+    }
+
     try {
       const task = await prisma.task.update({
         where: { id: taskId },
         data: {
-          status: body.status,
-          startedAt: body.status === 'running' ? new Date() : undefined,
-          completedAt: body.status === 'completed' || body.status === 'failed' ? new Date() : undefined,
+          status: taskStatus,
+          startedAt: taskStatus === 'running' ? new Date() : undefined,
+          completedAt: taskStatus === 'completed' || taskStatus === 'failed' ? new Date() : undefined,
         },
       });
 
-      logger.info({ taskId, deviceId, status: body.status }, 'Task status updated');
+      logger.info({ taskId, deviceId, status: taskStatus }, 'Task status updated');
       return { success: true, task };
     } catch (error) {
       logger.error({ taskId, error }, 'Failed to update task status');
@@ -173,17 +190,34 @@ export async function agentRoutes(fastify: FastifyInstance) {
       });
     }
 
+    // Map string status to TaskStatus enum
+    const statusMap: Record<string, 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled'> = {
+      pending: 'pending',
+      assigned: 'assigned',
+      running: 'running',
+      completed: 'completed',
+      failed: 'failed',
+      cancelled: 'cancelled',
+    };
+    const taskStatus = statusMap[body.status.toLowerCase()];
+    
+    if (!taskStatus) {
+      return reply.status(400).send({
+        error: { message: 'Invalid status', code: 'INVALID_STATUS' },
+      });
+    }
+
     try {
       const task = await prisma.task.update({
         where: { id: taskId },
         data: {
-          status: body.status,
+          status: taskStatus,
           resultJson: body.result || null,
-          completedAt: body.status === 'completed' || body.status === 'failed' ? new Date() : undefined,
+          completedAt: taskStatus === 'completed' || taskStatus === 'failed' ? new Date() : undefined,
         },
       });
 
-      logger.info({ taskId, deviceId, status: body.status }, 'Task result submitted via /tasks/:id/result');
+      logger.info({ taskId, deviceId, status: taskStatus }, 'Task result submitted via /tasks/:id/result');
       return { success: true, task };
     } catch (error) {
       logger.error({ taskId, error }, 'Failed to submit task result');
