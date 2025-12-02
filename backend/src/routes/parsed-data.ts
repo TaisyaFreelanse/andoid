@@ -28,6 +28,7 @@ export async function parsedDataRoutes(fastify: FastifyInstance) {
                 id: true,
                 name: true,
                 type: true,
+                resultJson: true, // Include extracted data
               },
             },
           },
@@ -38,8 +39,14 @@ export async function parsedDataRoutes(fastify: FastifyInstance) {
         prisma.parsedData.count({ where }),
       ]);
 
+      // Merge task result data into parsed data
+      const enrichedData = data.map((item) => ({
+        ...item,
+        extractedData: item.task?.resultJson || null,
+      }));
+
       return {
-        data,
+        data: enrichedData,
         pagination: {
           total,
           limit: parseInt(limit, 10),
@@ -98,22 +105,32 @@ export async function parsedDataRoutes(fastify: FastifyInstance) {
             select: {
               id: true,
               name: true,
+              resultJson: true,
             },
           },
         },
         orderBy: { parsedAt: 'desc' },
       });
 
-      
-      const csvHeader = 'task_id,url,ad_url,ad_domain,screenshot_path,parsed_at\n';
+      // CSV with extracted data summary
+      const csvHeader = 'task_id,task_name,url,ad_url,ad_domain,screenshot_path,parsed_at,titles_count,links_count,scores_count\n';
       const csvRows = data.map((item) => {
+        const resultJson = item.task?.resultJson as any;
+        const titlesCount = resultJson?.titles?.length || 0;
+        const linksCount = resultJson?.links?.length || 0;
+        const scoresCount = resultJson?.scores?.length || 0;
+        
         return [
           item.taskId,
+          item.task?.name || '',
           item.url,
           item.adUrl || '',
           item.adDomain || '',
           item.screenshotPath || '',
           item.parsedAt.toISOString(),
+          titlesCount,
+          linksCount,
+          scoresCount,
         ].map((field) => `"${String(field).replace(/"/g, '""')}"`).join(',');
       });
 
@@ -150,13 +167,20 @@ export async function parsedDataRoutes(fastify: FastifyInstance) {
               id: true,
               name: true,
               type: true,
+              resultJson: true, // Include extracted data (titles, links, scores, etc.)
             },
           },
         },
         orderBy: { parsedAt: 'desc' },
       });
 
-      return { data };
+      // Merge task result data into parsed data for easier access
+      const enrichedData = data.map((item) => ({
+        ...item,
+        extractedData: item.task?.resultJson || null,
+      }));
+
+      return { data: enrichedData };
     }
   );
 }
