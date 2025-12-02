@@ -576,7 +576,7 @@ class ControllerService : LifecycleService() {
     /**
      * Get current device ID
      */
-    override fun getDeviceId(): String? = deviceId
+    fun getAgentDeviceId(): String? = deviceId
 
     /**
      * Get registration status
