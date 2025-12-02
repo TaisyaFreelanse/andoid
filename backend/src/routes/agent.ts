@@ -212,6 +212,31 @@ export async function agentRoutes(fastify: FastifyInstance) {
         },
       });
 
+      // Auto-save to parsed data for completed tasks
+      if (finalStatus === 'completed' && task) {
+        try {
+          const resultData = body.result || body.data || {};
+          const configJson = task.configJson as any;
+          const url = configJson?.url || configJson?.steps?.[0]?.url || 'unknown';
+          
+          // Create parsed data record
+          await prisma.parsedData.create({
+            data: {
+              taskId: taskId,
+              url: url,
+              adUrl: resultData.ad_urls?.[0] || resultData.adUrl || null,
+              adDomain: resultData.ad_domain || resultData.adDomain || null,
+              screenshotPath: resultData.screenshot || resultData.screenshotPath || null,
+            },
+          });
+          
+          logger.info({ taskId }, 'Parsed data auto-saved');
+        } catch (parseErr) {
+          // Don't fail the request if parsed data save fails
+          logger.warn({ taskId, error: parseErr }, 'Failed to auto-save parsed data');
+        }
+      }
+
       logger.info({ taskId, deviceId, status: finalStatus }, 'Task result submitted via /tasks/:id/result');
       return { success: true, task };
     } catch (error) {
