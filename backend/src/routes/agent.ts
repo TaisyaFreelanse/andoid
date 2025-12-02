@@ -206,7 +206,17 @@ export async function agentRoutes(fastify: FastifyInstance) {
   fastify.post('/tasks/:taskId/result', async (request: FastifyRequest<{ Params: { taskId: string } }>, reply: FastifyReply) => {
     const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;
     const { taskId } = request.params;
-    const body = request.body as { status?: string; success?: boolean; result?: any; data?: any; error?: string };
+    const body = request.body as { status?: string; success?: boolean; result?: any; data?: any; error?: string; executionTime?: number; screenshots?: string[] };
+
+    // Log incoming data for debugging
+    logger.info({ 
+      taskId, 
+      bodyKeys: Object.keys(body),
+      hasData: !!body.data,
+      hasResult: !!body.result,
+      dataKeys: body.data ? Object.keys(body.data) : [],
+      success: body.success
+    }, 'Task result received from Android Agent');
 
     if (!deviceId) {
       return reply.status(401).send({
@@ -226,12 +236,15 @@ export async function agentRoutes(fastify: FastifyInstance) {
       finalStatus = 'failed';
     }
 
+    // Get the result data
+    const resultData = body.result || body.data || {};
+
     try {
       const task = await prisma.task.update({
         where: { id: taskId },
         data: {
           status: finalStatus,
-          resultJson: body.result || body.data || null,
+          resultJson: resultData,
           completedAt: new Date(),
         },
       });
@@ -239,30 +252,42 @@ export async function agentRoutes(fastify: FastifyInstance) {
       // Auto-save to parsed data for completed tasks
       if (finalStatus === 'completed' && task) {
         try {
-          const resultData = body.result || body.data || {};
           const configJson = task.configJson as any;
           const url = configJson?.url || configJson?.steps?.[0]?.url || 'unknown';
           
-          // Create parsed data record
+          // Extract data from various possible keys
+          const titles = resultData.titles || resultData.extracted_data || [];
+          const links = resultData.links || [];
+          const adUrls = resultData.ad_urls || [];
+          const screenshots = resultData.screenshots || body.screenshots || [];
+          
+          // Create parsed data record with extracted info
           await prisma.parsedData.create({
             data: {
               taskId: taskId,
               url: url,
-              adUrl: resultData.ad_urls?.[0] || resultData.adUrl || null,
+              adUrl: adUrls[0] || resultData.adUrl || null,
               adDomain: resultData.ad_domain || resultData.adDomain || null,
-              screenshotPath: resultData.screenshot || resultData.screenshotPath || null,
+              screenshotPath: screenshots[0] || resultData.screenshot || resultData.screenshotPath || null,
             },
           });
           
-          logger.info({ taskId }, 'Parsed data auto-saved');
-          broadcastLog(`💾 Артефакт сохранён: ${url}`, 'info');
+          // Log extracted data count
+          const extractedCount = (titles?.length || 0) + (links?.length || 0);
+          logger.info({ taskId, titlesCount: titles?.length, linksCount: links?.length }, 'Parsed data auto-saved');
+          
+          if (extractedCount > 0) {
+            broadcastLog(`💾 Артефакт сохранён: ${url} (${extractedCount} элементов)`, 'info');
+          } else {
+            broadcastLog(`💾 Артефакт сохранён: ${url}`, 'info');
+          }
         } catch (parseErr) {
           // Don't fail the request if parsed data save fails
           logger.warn({ taskId, error: parseErr }, 'Failed to auto-save parsed data');
         }
       }
 
-      logger.info({ taskId, deviceId, status: finalStatus }, 'Task result submitted via /tasks/:id/result');
+      logger.info({ taskId, deviceId, status: finalStatus, resultKeys: Object.keys(resultData) }, 'Task result submitted via /tasks/:id/result');
       
       const resultEmoji = finalStatus === 'completed' ? '🎉' : '💥';
       broadcastLog(`${resultEmoji} Результат задачи ${task.name}: ${finalStatus}`, finalStatus === 'failed' ? 'error' : 'info');
