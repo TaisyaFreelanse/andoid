@@ -129,6 +129,70 @@ export async function agentRoutes(fastify: FastifyInstance) {
   });
 
   
+  // Update task status endpoint (for Android Agent)
+  fastify.put('/tasks/:taskId/status', async (request: FastifyRequest<{ Params: { taskId: string } }>, reply: FastifyReply) => {
+    const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;
+    const { taskId } = request.params;
+    const body = request.body as { status: string };
+
+    if (!deviceId) {
+      return reply.status(401).send({
+        error: { message: 'Missing device ID', code: 'MISSING_DEVICE_ID' },
+      });
+    }
+
+    try {
+      const task = await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          status: body.status,
+          startedAt: body.status === 'running' ? new Date() : undefined,
+          completedAt: body.status === 'completed' || body.status === 'failed' ? new Date() : undefined,
+        },
+      });
+
+      logger.info({ taskId, deviceId, status: body.status }, 'Task status updated');
+      return { success: true, task };
+    } catch (error) {
+      logger.error({ taskId, error }, 'Failed to update task status');
+      return reply.status(404).send({
+        error: { message: 'Task not found', code: 'TASK_NOT_FOUND' },
+      });
+    }
+  });
+
+  // Send task result endpoint (for Android Agent)
+  fastify.post('/tasks/:taskId/result', async (request: FastifyRequest<{ Params: { taskId: string } }>, reply: FastifyReply) => {
+    const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;
+    const { taskId } = request.params;
+    const body = request.body as { status: string; result?: any; error?: string };
+
+    if (!deviceId) {
+      return reply.status(401).send({
+        error: { message: 'Missing device ID', code: 'MISSING_DEVICE_ID' },
+      });
+    }
+
+    try {
+      const task = await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          status: body.status,
+          resultJson: body.result || null,
+          completedAt: body.status === 'completed' || body.status === 'failed' ? new Date() : undefined,
+        },
+      });
+
+      logger.info({ taskId, deviceId, status: body.status }, 'Task result submitted via /tasks/:id/result');
+      return { success: true, task };
+    } catch (error) {
+      logger.error({ taskId, error }, 'Failed to submit task result');
+      return reply.status(404).send({
+        error: { message: 'Task not found', code: 'TASK_NOT_FOUND' },
+      });
+    }
+  });
+
   fastify.post('/task/result', async (request: FastifyRequest, reply: FastifyReply) => {
     const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;
     const body = taskResultSchema.parse(request.body);
