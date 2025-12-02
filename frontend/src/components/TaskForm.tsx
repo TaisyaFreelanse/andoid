@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { tasksApi, TaskType } from '../api/tasks';
+import { devicesApi, Device } from '../api/devices';
 import './TaskForm.css';
 
 interface TaskFormProps {
@@ -11,8 +12,30 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<TaskType>('parsing');
   const [configJson, setConfigJson] = useState('{}');
+  const [deviceId, setDeviceId] = useState('');
+  const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadDevices();
+  }, []);
+
+  const loadDevices = async () => {
+    try {
+      const data = await devicesApi.getAll();
+      setDevices(data);
+      // Автоматически выбрать первое онлайн устройство
+      const onlineDevice = data.find(d => d.status === 'online');
+      if (onlineDevice) {
+        setDeviceId(onlineDevice.id);
+      } else if (data.length > 0) {
+        setDeviceId(data[0].id);
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки устройств:', err);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +55,7 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
         name,
         type,
         configJson: parsedConfig,
+        deviceId: deviceId || undefined,
       });
       onSuccess();
     } catch (err: any) {
@@ -68,6 +92,22 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
             <option value="parsing">Парсинг</option>
             <option value="uniqueness">Уникализация</option>
             <option value="screenshot">Скриншот</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label htmlFor="device">Устройство</label>
+          <select
+            id="device"
+            value={deviceId}
+            onChange={(e) => setDeviceId(e.target.value)}
+            required
+          >
+            <option value="">-- Выберите устройство --</option>
+            {devices.map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.name || device.androidId} ({device.status}) {device.status === 'online' ? '🟢' : '⚪'}
+              </option>
+            ))}
           </select>
         </div>
         <div className="form-group">
