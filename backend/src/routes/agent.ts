@@ -134,13 +134,29 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
     const response = {
       success: true,
-      tasks: tasks.map((task) => ({
-        id: task.id,
-        name: task.name,
-        type: task.type,
-        status: task.status,
-        config: task.configJson,
-      })),
+      tasks: tasks.map((task) => {
+        const configJson = task.configJson as any;
+        // Extract steps from configJson and format for Android Agent
+        const steps = configJson?.steps?.map((step: any) => {
+          const { type, ...stepConfig } = step; // Separate type from other fields
+          return {
+            type: type,
+            config: stepConfig, // All other fields go into config
+          };
+        }) || [];
+        
+        logger.info({ taskId: task.id, stepsCount: steps.length, stepTypes: steps.map((s: any) => s.type) }, 'Preparing task for Android Agent');
+        
+        return {
+          id: task.id,
+          name: task.name,
+          type: task.type,
+          status: task.status,
+          priority: 0,
+          config: configJson,
+          steps: steps,
+        };
+      }),
     };
     
     logger.info({ responsePreview: JSON.stringify(response).substring(0, 500), responseSize: JSON.stringify(response).length }, 'Heartbeat response');
