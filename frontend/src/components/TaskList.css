@@ -4,8 +4,43 @@
   gap: 1.75rem;
 }
 
+.task-item-wrapper {
+  position: relative;
+}
+
 .task-link {
   text-decoration: none;
   color: inherit;
+  display: block;
+}
+
+.task-delete-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+}
+
+.delete-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(231, 76, 60, 0.9);
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.delete-btn:hover {
+  background: #c0392b;
+  opacity: 1;
+  transform: scale(1.1);
 }
 

@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../server';
 import { authenticate } from '../middleware/auth.middleware';
+import { requireRole } from '../middleware/rbac.middleware';
+import { logger } from '../utils/logger';
 
 export async function parsedDataRoutes(fastify: FastifyInstance) {
   
@@ -181,6 +183,43 @@ export async function parsedDataRoutes(fastify: FastifyInstance) {
       }));
 
       return { data: enrichedData };
+    }
+  );
+
+  // Delete single artifact
+  fastify.delete<{ Params: { id: string } }>(
+    '/:id',
+    { preHandler: [authenticate, requireRole('admin', 'operator')] },
+    async (request, reply) => {
+      try {
+        await prisma.parsedData.delete({
+          where: { id: request.params.id },
+        });
+
+        logger.info({ parsedDataId: request.params.id }, 'Parsed data deleted');
+
+        return { success: true, message: 'Artifact deleted' };
+      } catch (error) {
+        logger.error({ error, parsedDataId: request.params.id }, 'Failed to delete parsed data');
+        return reply.status(404).send({
+          error: { message: 'Artifact not found', code: 'ARTIFACT_NOT_FOUND' },
+        });
+      }
+    }
+  );
+
+  // Delete all artifacts for a task
+  fastify.delete<{ Params: { taskId: string } }>(
+    '/task/:taskId',
+    { preHandler: [authenticate, requireRole('admin', 'operator')] },
+    async (request, _reply) => {
+      const result = await prisma.parsedData.deleteMany({
+        where: { taskId: request.params.taskId },
+      });
+
+      logger.info({ taskId: request.params.taskId, count: result.count }, 'All parsed data for task deleted');
+
+      return { success: true, message: `Deleted ${result.count} artifacts` };
     }
   );
 }

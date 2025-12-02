@@ -44,5 +44,11 @@ export const parsedDataApi = {
     });
     return response.data.data;
   },
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/parsed-data/${id}`);
+  },
+  deleteByTask: async (taskId: string): Promise<void> => {
+    await apiClient.delete(`/parsed-data/task/${taskId}`);
+  },
 };
 

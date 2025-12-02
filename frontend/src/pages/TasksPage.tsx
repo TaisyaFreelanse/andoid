@@ -72,7 +72,7 @@ export default function TasksPage() {
           <h3>Задачи</h3>
           <span className="section-meta">{tasks.length} активных</span>
         </div>
-        <TaskList tasks={tasks} />
+        <TaskList tasks={tasks} onTaskDeleted={loadTasks} />
       </section>
     </div>
   );

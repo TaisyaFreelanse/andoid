@@ -81,7 +81,7 @@ export default function ArtifactsPage() {
         </div>
         {loading && <div className="loading">Загрузка артефактов...</div>}
         {error && <div className="error">Ошибка: {error}</div>}
-        {!loading && !error && <ScreenshotViewer data={data} />}
+        {!loading && !error && <ScreenshotViewer data={data} onArtifactDeleted={loadData} />}
       </section>
     </div>
   );
