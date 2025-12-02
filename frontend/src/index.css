@@ -37,6 +37,22 @@ code {
   font-family: 'IBM Plex Mono', 'Fira Code', monospace;
 }
 
+/* Global select dropdown styling */
+select {
+  cursor: pointer;
+}
+
+select option {
+  background-color: #1a1a1a;
+  color: #ffffff;
+  padding: 8px 12px;
+}
+
+select option:hover,
+select option:checked {
+  background-color: #333333;
+}
+
 #root {
   min-height: 100vh;
   position: relative;
