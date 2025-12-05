@@ -103,11 +103,14 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
             required
           >
             <option value="">-- Выберите устройство --</option>
-            {devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.name || device.androidId} ({device.status}) {device.status === 'online' ? '🟢' : '⚪'}
-              </option>
-            ))}
+            {devices.map((device, index) => {
+              const deviceNumber = String(index + 1).padStart(2, '0');
+              return (
+                <option key={device.id} value={device.id}>
+                  {deviceNumber} - {device.name || device.androidId?.substring(0, 8) || 'Device'} ({device.status}) {device.status === 'online' ? '🟢' : '⚪'}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div className="form-group">
