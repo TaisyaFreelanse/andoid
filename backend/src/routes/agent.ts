@@ -10,6 +10,12 @@ import { broadcastLog } from './logs';
 export async function agentRoutes(fastify: FastifyInstance) {
   
   fastify.post('/register', async (request: FastifyRequest, _reply: FastifyReply) => {
+    // Log RAW request body BEFORE parsing to see what actually comes from client
+    logger.info({
+      rawBody: request.body,
+      rawBodyKeys: request.body ? Object.keys(request.body as object) : [],
+    }, 'Device registration - RAW request body (before parsing)');
+
     const body = registerDeviceSchema.parse(request.body);
     const existingDeviceId = body.existingDeviceId;
     const isRooted = body.isRooted;
@@ -23,7 +29,8 @@ export async function agentRoutes(fastify: FastifyInstance) {
       existingDeviceId: existingDeviceId,
       rootCheckDetails: rootCheckDetails,
       rootCheckMethods: rootCheckMethods,
-      fullBody: request.body, // Log full body for debugging
+      parsedBody: body, // Log parsed body after validation
+      rawBody: request.body, // Log raw body for comparison
     }, 'Device registration request - Root check with details');
 
     let device = null;
