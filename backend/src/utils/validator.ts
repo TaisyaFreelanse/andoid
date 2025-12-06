@@ -65,13 +65,25 @@ export const updateProxySchema = z.object({
 
 export const registerDeviceSchema = z.object({
   androidId: z.string().min(1),
-  aaid: z.string().optional(),
-  browserType: z.enum(['chrome', 'webview']).optional(),
-  deviceInfo: z.record(z.any()).optional(),
-  isRooted: z.boolean().optional(),
-  existingDeviceId: z.string().optional(),
-  rootCheckDetails: z.string().optional(),
-  rootCheckMethods: z.string().optional(),
+  aaid: z.string().nullable().optional(),
+  browserType: z.enum(['chrome', 'webview']).nullable().optional(),
+  deviceInfo: z.record(z.any()).nullable().optional(),
+  isRooted: z.boolean().nullable().optional(),
+  existingDeviceId: z.string().nullable().optional(),
+  rootCheckDetails: z.string().nullable().optional(),
+  rootCheckMethods: z.string().nullable().optional(),
+  // Additional fields from Android client
+  manufacturer: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  version: z.string().nullable().optional(),
+  userAgent: z.string().nullable().optional(),
+  brand: z.string().nullable().optional(),
+  country: z.string().nullable().optional(),
+  language: z.string().nullable().optional(),
+  timezone: z.string().nullable().optional(),
+  screenWidth: z.number().nullable().optional(),
+  screenHeight: z.number().nullable().optional(),
+  sdkVersion: z.number().nullable().optional(),
 });
 
 export const heartbeatSchema = z.object({
