@@ -77,8 +77,8 @@ class MainActivity : AppCompatActivity() {
         // Display device info
         displayDeviceInfo()
         
-        // Check root status
-        checkRootStatus()
+        // Check root status asynchronously (to avoid blocking UI)
+        checkRootStatusAsync()
         
         // Start service automatically
         startControllerService()
@@ -169,51 +169,79 @@ class MainActivity : AppCompatActivity() {
         deviceInfoText.text = info.toString()
     }
 
-    private fun checkRootStatus() {
-        android.util.Log.d("MainActivity", "=== Checking root status ===")
+    private fun checkRootStatusAsync() {
+        // Show loading state
+        rootStatusText.text = "Root: Проверка..."
+        rootStatusText.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
         
-        // Check if root was already granted
-        val rootGranted = Shell.isAppGrantedRoot() == true
-        android.util.Log.d("MainActivity", "libsu granted: $rootGranted")
-        
-        val hasRoot = rootUtils.isRootAvailable()
-        android.util.Log.d("MainActivity", "Root available: $hasRoot")
-        
-        val statusText = when {
-            rootGranted -> {
-                android.util.Log.i("MainActivity", "Root status: ✓ Доступен (granted)")
-                "Root: ✓ Доступен"
-            }
-            hasRoot -> {
-                android.util.Log.w("MainActivity", "Root status: ⚠ Доступен (требуется разрешение)")
-                "Root: ⚠ Доступен (требуется разрешение)"
-            }
-            else -> {
-                android.util.Log.w("MainActivity", "Root status: ✗ Недоступен")
-                "Root: ✗ Недоступен"
-            }
-        }
-        
-        rootStatusText.text = statusText
-        
-        rootStatusText.setTextColor(
-            ContextCompat.getColor(
-                this,
-                when {
-                    rootGranted -> android.R.color.holo_green_dark
-                    hasRoot -> android.R.color.holo_orange_dark
-                    else -> android.R.color.holo_red_dark
+        // Run check in background thread
+        Thread {
+            try {
+                android.util.Log.d("MainActivity", "=== Checking root status (async) ===")
+                
+                // Check if root was already granted
+                val rootGranted = try {
+                    Shell.isAppGrantedRoot() == true
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Error checking libsu: ${e.message}")
+                    false
                 }
-            )
-        )
-        
-        // Make root status clickable to re-check
-        rootStatusText.setOnClickListener {
-            android.util.Log.d("MainActivity", "Root status clicked - re-checking...")
-            checkRootStatus()
-        }
-        
-        android.util.Log.d("MainActivity", "=== Root status check complete ===")
+                android.util.Log.d("MainActivity", "libsu granted: $rootGranted")
+                
+                val hasRoot = rootUtils.isRootAvailable()
+                android.util.Log.d("MainActivity", "Root available: $hasRoot")
+                
+                // Update UI on main thread
+                runOnUiThread {
+                    val statusText = when {
+                        rootGranted -> {
+                            android.util.Log.i("MainActivity", "Root status: ✓ Доступен (granted)")
+                            "Root: ✓ Доступен"
+                        }
+                        hasRoot -> {
+                            android.util.Log.w("MainActivity", "Root status: ⚠ Доступен (требуется разрешение)")
+                            "Root: ⚠ Доступен (требуется разрешение)"
+                        }
+                        else -> {
+                            android.util.Log.w("MainActivity", "Root status: ✗ Недоступен")
+                            "Root: ✗ Недоступен"
+                        }
+                    }
+                    
+                    rootStatusText.text = statusText
+                    
+                    rootStatusText.setTextColor(
+                        ContextCompat.getColor(
+                            this@MainActivity,
+                            when {
+                                rootGranted -> android.R.color.holo_green_dark
+                                hasRoot -> android.R.color.holo_orange_dark
+                                else -> android.R.color.holo_red_dark
+                            }
+                        )
+                    )
+                    
+                    // Make root status clickable to re-check
+                    rootStatusText.setOnClickListener {
+                        android.util.Log.d("MainActivity", "Root status clicked - re-checking...")
+                        checkRootStatusAsync()
+                    }
+                    
+                    android.util.Log.d("MainActivity", "=== Root status check complete ===")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Error checking root: ${e.message}", e)
+                runOnUiThread {
+                    rootStatusText.text = "Root: Ошибка проверки"
+                    rootStatusText.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark))
+                }
+            }
+        }.start()
+    }
+    
+    private fun checkRootStatus() {
+        // Synchronous version for compatibility
+        checkRootStatusAsync()
     }
 
     private fun startControllerService() {

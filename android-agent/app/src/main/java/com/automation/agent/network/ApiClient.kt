@@ -360,7 +360,9 @@ class ApiClient(
         val language: String? = null,
         val country: String? = null,
         val isRooted: Boolean? = null,
-        val existingDeviceId: String? = null
+        val existingDeviceId: String? = null,
+        val rootCheckDetails: String? = null,
+        val rootCheckMethods: String? = null
     )
 
     data class DeviceRegistrationResponse(

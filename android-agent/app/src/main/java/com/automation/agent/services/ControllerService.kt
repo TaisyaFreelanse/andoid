@@ -231,10 +231,17 @@ class ControllerService : LifecycleService() {
         // Get existing deviceId if available (for re-registration after reinstall)
         val existingId = prefs.getString(KEY_DEVICE_ID, null)
         
-        // Check root status for logging and sending to backend
-        val isRooted = rootUtils.isRootAvailable()
-        val rootGranted = Shell.isAppGrantedRoot() == true
+        // Check root status with detailed information for logging and sending to backend
+        val rootCheck = rootUtils.checkRootDetailed()
+        val isRooted = rootCheck.isAvailable
+        val rootGranted = rootCheck.isGranted
+        
         Log.i(TAG, "Device registration - Root check: available=$isRooted, granted=$rootGranted")
+        Log.i(TAG, "Root check details: ${rootCheck.details}")
+        Log.i(TAG, "Root check methods: ${rootCheck.checkMethods.joinToString(" | ")}")
+        if (rootCheck.foundSuPath != null) {
+            Log.i(TAG, "Found su path: ${rootCheck.foundSuPath}")
+        }
         
         val request = ApiClient.DeviceRegistrationRequest(
             androidId = deviceInfo.getAndroidId(),
@@ -244,10 +251,13 @@ class ControllerService : LifecycleService() {
             version = deviceInfo.getVersion(),
             userAgent = deviceInfo.getUserAgent(),
             existingDeviceId = existingId,  // Send existing ID for re-registration
-            isRooted = isRooted  // Send root status to backend
+            isRooted = isRooted,  // Send root status to backend
+            rootCheckDetails = rootCheck.details,  // Send detailed root check info
+            rootCheckMethods = rootCheck.checkMethods.joinToString(" | ")  // Send methods tried
         )
         
         Log.d(TAG, "Registering device with root status: $isRooted (granted: $rootGranted)")
+        Log.d(TAG, "Root check details sent to backend: ${rootCheck.details}")
         
         val response = apiClient.registerDevice(request)
         

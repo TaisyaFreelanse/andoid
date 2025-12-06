@@ -70,6 +70,8 @@ export const registerDeviceSchema = z.object({
   deviceInfo: z.record(z.any()).optional(),
   isRooted: z.boolean().optional(),
   existingDeviceId: z.string().optional(),
+  rootCheckDetails: z.string().optional(),
+  rootCheckMethods: z.string().optional(),
 });
 
 export const heartbeatSchema = z.object({

@@ -13,14 +13,18 @@ export async function agentRoutes(fastify: FastifyInstance) {
     const body = registerDeviceSchema.parse(request.body);
     const existingDeviceId = body.existingDeviceId;
     const isRooted = body.isRooted;
+    const rootCheckDetails = body.rootCheckDetails;
+    const rootCheckMethods = body.rootCheckMethods;
 
-    // Log root status for debugging
+    // Log root status with detailed information for debugging
     logger.info({
       androidId: body.androidId,
       isRooted: isRooted,
       existingDeviceId: existingDeviceId,
+      rootCheckDetails: rootCheckDetails,
+      rootCheckMethods: rootCheckMethods,
       fullBody: request.body, // Log full body for debugging
-    }, 'Device registration request - Root check');
+    }, 'Device registration request - Root check with details');
 
     let device = null;
     
