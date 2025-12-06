@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.automation.agent.services.ControllerService
 import com.automation.agent.utils.DeviceInfo
 import com.automation.agent.utils.RootUtils
+import com.topjohnwu.superuser.Shell
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -169,18 +170,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkRootStatus() {
+        android.util.Log.d("MainActivity", "=== Checking root status ===")
+        
+        // Check if root was already granted
+        val rootGranted = Shell.isAppGrantedRoot() == true
+        android.util.Log.d("MainActivity", "libsu granted: $rootGranted")
+        
         val hasRoot = rootUtils.isRootAvailable()
-        rootStatusText.text = if (hasRoot) {
-            "Root: ✓ Доступен"
-        } else {
-            "Root: ✗ Недоступен"
+        android.util.Log.d("MainActivity", "Root available: $hasRoot")
+        
+        val statusText = when {
+            rootGranted -> {
+                android.util.Log.i("MainActivity", "Root status: ✓ Доступен (granted)")
+                "Root: ✓ Доступен"
+            }
+            hasRoot -> {
+                android.util.Log.w("MainActivity", "Root status: ⚠ Доступен (требуется разрешение)")
+                "Root: ⚠ Доступен (требуется разрешение)"
+            }
+            else -> {
+                android.util.Log.w("MainActivity", "Root status: ✗ Недоступен")
+                "Root: ✗ Недоступен"
+            }
         }
+        
+        rootStatusText.text = statusText
+        
         rootStatusText.setTextColor(
             ContextCompat.getColor(
                 this,
-                if (hasRoot) android.R.color.holo_green_dark else android.R.color.holo_red_dark
+                when {
+                    rootGranted -> android.R.color.holo_green_dark
+                    hasRoot -> android.R.color.holo_orange_dark
+                    else -> android.R.color.holo_red_dark
+                }
             )
         )
+        
+        // Make root status clickable to re-check
+        rootStatusText.setOnClickListener {
+            android.util.Log.d("MainActivity", "Root status clicked - re-checking...")
+            checkRootStatus()
+        }
+        
+        android.util.Log.d("MainActivity", "=== Root status check complete ===")
     }
 
     private fun startControllerService() {
@@ -253,6 +286,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateUI()
+        // Re-check root status in case user granted root permissions
+        checkRootStatus()
     }
 
     override fun onDestroy() {

@@ -354,7 +354,8 @@ class ApiClient(
         val screenHeight: Int? = null,
         val language: String? = null,
         val country: String? = null,
-        val isRooted: Boolean? = null
+        val isRooted: Boolean? = null,
+        val existingDeviceId: String? = null
     )
 
     data class DeviceRegistrationResponse(

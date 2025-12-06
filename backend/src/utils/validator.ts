@@ -68,6 +68,8 @@ export const registerDeviceSchema = z.object({
   aaid: z.string().optional(),
   browserType: z.enum(['chrome', 'webview']).optional(),
   deviceInfo: z.record(z.any()).optional(),
+  isRooted: z.boolean().optional(),
+  existingDeviceId: z.string().optional(),
 });
 
 export const heartbeatSchema = z.object({

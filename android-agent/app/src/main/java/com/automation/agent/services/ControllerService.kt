@@ -19,6 +19,7 @@ import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
 import com.automation.agent.utils.DeviceInfo
 import com.automation.agent.utils.RootUtils
+import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -230,6 +231,11 @@ class ControllerService : LifecycleService() {
         // Get existing deviceId if available (for re-registration after reinstall)
         val existingId = prefs.getString(KEY_DEVICE_ID, null)
         
+        // Check root status for logging and sending to backend
+        val isRooted = rootUtils.isRootAvailable()
+        val rootGranted = Shell.isAppGrantedRoot() == true
+        Log.i(TAG, "Device registration - Root check: available=$isRooted, granted=$rootGranted")
+        
         val request = ApiClient.DeviceRegistrationRequest(
             androidId = deviceInfo.getAndroidId(),
             aaid = aaid,
@@ -237,8 +243,11 @@ class ControllerService : LifecycleService() {
             manufacturer = deviceInfo.getManufacturer(),
             version = deviceInfo.getVersion(),
             userAgent = deviceInfo.getUserAgent(),
-            existingDeviceId = existingId  // Send existing ID for re-registration
+            existingDeviceId = existingId,  // Send existing ID for re-registration
+            isRooted = isRooted  // Send root status to backend
         )
+        
+        Log.d(TAG, "Registering device with root status: $isRooted (granted: $rootGranted)")
         
         val response = apiClient.registerDevice(request)
         

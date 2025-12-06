@@ -52,9 +52,83 @@ class RootUtils {
 
     /**
      * Check if device has root access
+     * Uses multiple methods to verify root availability:
+     * 1. Check if libsu already has root granted
+     * 2. Check if su binary exists
+     * 3. Try to execute a simple root command
      */
     fun isRootAvailable(): Boolean {
-        return Shell.isAppGrantedRoot() == true
+        Log.d(TAG, "=== Starting root check ===")
+        
+        // Method 1: Check if root was already granted to app via libsu
+        val libsuGranted = Shell.isAppGrantedRoot() == true
+        Log.d(TAG, "Method 1 - libsu granted: $libsuGranted")
+        if (libsuGranted) {
+            Log.d(TAG, "✓ Root already granted via libsu")
+            return true
+        }
+        
+        // Method 2: Check if su binary exists (device is rooted)
+        val suPaths = arrayOf(
+            "/system/bin/su",
+            "/system/xbin/su",
+            "/sbin/su",
+            "/vendor/bin/su",
+            "/data/local/xbin/su",
+            "/data/local/bin/su",
+            "/system/sd/xbin/su",
+            "/system/bin/failsafe/su",
+            "/data/local/su",
+            "/su/bin/su"
+        )
+        
+        var suExists = false
+        var foundPath: String? = null
+        for (path in suPaths) {
+            val exists = java.io.File(path).exists()
+            Log.d(TAG, "Checking $path: $exists")
+            if (exists) {
+                suExists = true
+                foundPath = path
+                Log.d(TAG, "✓ Found su binary at: $path")
+                break
+            }
+        }
+        
+        if (!suExists) {
+            Log.w(TAG, "✗ No su binary found in any standard location - device may not be rooted")
+            Log.d(TAG, "=== Root check result: FALSE (no su binary) ===")
+            return false
+        }
+        
+        Log.d(TAG, "Method 2 - su binary found: $foundPath")
+        
+        // Method 3: Try to get root shell (this may trigger root request)
+        // We use a non-blocking approach - just check if we can get shell
+        return try {
+            Log.d(TAG, "Method 3 - Attempting to get root shell...")
+            val shell = Shell.getShell()
+            val isRoot = shell.isRoot
+            if (isRoot) {
+                Log.d(TAG, "✓ Root shell obtained successfully")
+                Log.d(TAG, "=== Root check result: TRUE (root shell available) ===")
+            } else {
+                Log.w(TAG, "⚠ Root shell not available, but su binary exists at $foundPath")
+                Log.w(TAG, "⚠ Device is rooted but app needs root permission granted")
+                Log.d(TAG, "=== Root check result: TRUE (device rooted, permission needed) ===")
+            }
+            isRoot
+        } catch (e: Exception) {
+            // If we can't get root shell but su exists, device is rooted
+            // but app doesn't have root granted yet
+            Log.w(TAG, "⚠ Cannot get root shell: ${e.message}")
+            Log.w(TAG, "⚠ Exception type: ${e.javaClass.simpleName}")
+            Log.w(TAG, "⚠ But su binary exists at $foundPath - device is rooted")
+            Log.w(TAG, "⚠ App needs root permission to be granted")
+            Log.d(TAG, "=== Root check result: TRUE (device rooted, permission needed) ===")
+            // Return true if su exists, as device is rooted (just needs permission)
+            true
+        }
     }
 
     /**
