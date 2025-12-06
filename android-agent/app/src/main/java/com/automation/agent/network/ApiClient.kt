@@ -1,6 +1,7 @@
 package com.automation.agent.network
 
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,7 +29,9 @@ class ApiClient(
 ) {
 
     private var client: OkHttpClient
-    private val gson = Gson()
+    private val gson = GsonBuilder()
+        .serializeNulls()  // Serialize null values
+        .create()
     private var authToken: String? = null
 
     init {
@@ -79,6 +82,8 @@ class ApiClient(
      */
     suspend fun registerDevice(deviceInfo: DeviceRegistrationRequest): DeviceRegistrationResponse? {
         val json = gson.toJson(deviceInfo)
+        android.util.Log.d("ApiClient", "Register device JSON: $json")
+        android.util.Log.d("ApiClient", "isRooted value: ${deviceInfo.isRooted}")
         val body = json.toRequestBody("application/json".toMediaType())
         
         val request = Request.Builder()
