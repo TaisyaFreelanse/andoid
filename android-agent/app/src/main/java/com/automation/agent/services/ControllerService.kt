@@ -243,6 +243,15 @@ class ControllerService : LifecycleService() {
             Log.i(TAG, "Found su path: ${rootCheck.foundSuPath}")
         }
         
+        // Ensure we have root check details
+        val rootDetails = rootCheck.details ?: "Root check not performed"
+        val rootMethods = rootCheck.checkMethods.joinToString(" | ") ?: "No methods tried"
+        
+        Log.i(TAG, "=== Creating DeviceRegistrationRequest ===")
+        Log.i(TAG, "isRooted: $isRooted (type: ${isRooted::class.java.simpleName})")
+        Log.i(TAG, "rootCheckDetails: $rootDetails")
+        Log.i(TAG, "rootCheckMethods: $rootMethods")
+        
         val request = ApiClient.DeviceRegistrationRequest(
             androidId = deviceInfo.getAndroidId(),
             aaid = aaid,
@@ -252,12 +261,13 @@ class ControllerService : LifecycleService() {
             userAgent = deviceInfo.getUserAgent(),
             existingDeviceId = existingId,  // Send existing ID for re-registration
             isRooted = isRooted,  // Send root status to backend
-            rootCheckDetails = rootCheck.details,  // Send detailed root check info
-            rootCheckMethods = rootCheck.checkMethods.joinToString(" | ")  // Send methods tried
+            rootCheckDetails = rootDetails,  // Send detailed root check info
+            rootCheckMethods = rootMethods  // Send methods tried
         )
         
+        Log.i(TAG, "Request created - isRooted: ${request.isRooted}, rootCheckDetails: ${request.rootCheckDetails}, rootCheckMethods: ${request.rootCheckMethods}")
         Log.d(TAG, "Registering device with root status: $isRooted (granted: $rootGranted)")
-        Log.d(TAG, "Root check details sent to backend: ${rootCheck.details}")
+        Log.d(TAG, "Root check details sent to backend: $rootDetails")
         
         val response = apiClient.registerDevice(request)
         

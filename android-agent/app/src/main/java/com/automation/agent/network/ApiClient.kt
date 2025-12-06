@@ -31,6 +31,7 @@ class ApiClient(
     private var client: OkHttpClient
     private val gson = GsonBuilder()
         .serializeNulls()  // Serialize null values
+        .setLenient()  // Allow lenient parsing
         .create()
     private var authToken: String? = null
 
@@ -81,9 +82,22 @@ class ApiClient(
      * Register device
      */
     suspend fun registerDevice(deviceInfo: DeviceRegistrationRequest): DeviceRegistrationResponse? {
+        // Log all fields before serialization
+        android.util.Log.i("ApiClient", "=== DeviceRegistrationRequest fields ===")
+        android.util.Log.i("ApiClient", "androidId: ${deviceInfo.androidId}")
+        android.util.Log.i("ApiClient", "aaid: ${deviceInfo.aaid}")
+        android.util.Log.i("ApiClient", "model: ${deviceInfo.model}")
+        android.util.Log.i("ApiClient", "manufacturer: ${deviceInfo.manufacturer}")
+        android.util.Log.i("ApiClient", "version: ${deviceInfo.version}")
+        android.util.Log.i("ApiClient", "userAgent: ${deviceInfo.userAgent}")
+        android.util.Log.i("ApiClient", "isRooted: ${deviceInfo.isRooted}")
+        android.util.Log.i("ApiClient", "rootCheckDetails: ${deviceInfo.rootCheckDetails}")
+        android.util.Log.i("ApiClient", "rootCheckMethods: ${deviceInfo.rootCheckMethods}")
+        android.util.Log.i("ApiClient", "existingDeviceId: ${deviceInfo.existingDeviceId}")
+        
         val json = gson.toJson(deviceInfo)
-        android.util.Log.d("ApiClient", "Register device JSON: $json")
-        android.util.Log.d("ApiClient", "isRooted value: ${deviceInfo.isRooted}")
+        android.util.Log.i("ApiClient", "=== Serialized JSON ===")
+        android.util.Log.i("ApiClient", "JSON: $json")
         val body = json.toRequestBody("application/json".toMediaType())
         
         val request = Request.Builder()
