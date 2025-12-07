@@ -33,46 +33,17 @@
     {
       "id": "step_1",
       "type": "navigate",
-      "url": "https://www.google.com/search?q=site%3Apickuplineinsider.com",
+      "url": "https://www.pickuplineinsider.com/",
       "wait_for_load": true,
       "timeout": 30000,
-      "description": "Переход сразу на страницу результатов поиска Google"
+      "description": "Прямой переход на сайт pickuplineinsider.com"
     },
     {
       "id": "step_2",
       "type": "wait",
       "duration": 5000,
       "random_offset": 2000,
-      "description": "Ожидание загрузки результатов поиска"
-    },
-    {
-      "id": "step_7",
-      "type": "scroll",
-      "direction": "down",
-      "pixels": 300,
-      "smooth": true,
-      "description": "Прокрутка для загрузки результатов"
-    },
-    {
-      "id": "step_8",
-      "type": "wait",
-      "duration": 2000,
-      "description": "Ожидание после прокрутки"
-    },
-    {
-      "id": "step_9",
-      "type": "click",
-      "selector": "div[data-ved] a[href*='pickuplineinsider.com'], div.g a[href*='pickuplineinsider.com'], h3 a[href*='pickuplineinsider.com'], a[href*='pickuplineinsider.com'][data-ved], .g a[href*='pickuplineinsider.com']",
-      "optional": false,
-      "timeout": 15000,
-      "description": "Клик по случайной ссылке из результатов поиска (первая найденная)"
-    },
-    {
-      "id": "step_10",
-      "type": "wait",
-      "duration": 5000,
-      "random_offset": 2000,
-      "description": "Ожидание загрузки сайта"
+      "description": "Ожидание полной загрузки сайта"
     },
     {
       "id": "step_11",
