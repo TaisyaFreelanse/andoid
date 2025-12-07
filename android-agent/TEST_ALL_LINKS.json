@@ -1,0 +1,71 @@
+{
+  "id": "test-extract-all-links",
+  "name": "Тест: Сбор всех ссылок",
+  "description": "Простой тест - собрать ВСЕ ссылки на странице",
+  "version": "1.0",
+  "type": "parsing",
+  "timeout": 120000,
+  "steps": [
+    {
+      "id": "step_0",
+      "type": "wait",
+      "duration": 2000,
+      "description": "Начальная задержка"
+    },
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "https://www.pickuplineinsider.com/",
+      "wait_for_load": true,
+      "timeout": 30000,
+      "description": "Переход на сайт"
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 5000,
+      "description": "Ожидание загрузки"
+    },
+    {
+      "id": "step_3",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 500,
+      "smooth": true,
+      "description": "Прокрутка вниз"
+    },
+    {
+      "id": "step_4",
+      "type": "wait",
+      "duration": 3000,
+      "description": "Ожидание после прокрутки"
+    },
+    {
+      "id": "step_5",
+      "type": "extract",
+      "selector": "a[href]",
+      "attribute": "href",
+      "save_as": "all_links",
+      "multiple": true,
+      "append": false,
+      "description": "Сбор ВСЕХ ссылок на странице"
+    },
+    {
+      "id": "step_6",
+      "type": "extract",
+      "selector": "iframe[src]",
+      "attribute": "src",
+      "save_as": "all_iframes",
+      "multiple": true,
+      "append": false,
+      "description": "Сбор всех iframe"
+    },
+    {
+      "id": "step_7",
+      "type": "screenshot",
+      "full_page": false,
+      "description": "Скриншот"
+    }
+  ]
+}
+
