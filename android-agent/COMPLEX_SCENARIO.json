@@ -62,32 +62,12 @@
     {
       "id": "step_13",
       "type": "extract",
-      "selector": "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], a[href*='googlesyndication'], a[href*='pagead'], a[href*='adservice'], a[href*='amazon-adsystem'], a[href*='media.net'], a[href*='outbrain'], a[href*='taboola'], a[href*='ezoic'], a[href*='ad.'], a[href*='ads.'], a[href*='click'], a[href*='track'], a[href*='affiliate'], a[href*='partner'], ins.adsbygoogle a, .ad a, .ads a, .advertisement a, [class*='ad-'] a, [class*='ads-'] a, [id*='ad-'] a, [id*='ads-'] a",
-      "attribute": "href",
-      "save_as": "ad_links",
-      "multiple": true,
-      "append": false,
-      "description": "Извлечение рекламных ссылок (расширенные селекторы)"
-    },
-    {
-      "id": "step_14",
-      "type": "extract",
       "selector": "iframe[src]",
       "attribute": "src",
       "save_as": "ad_links",
       "multiple": true,
-      "append": true,
+      "append": false,
       "description": "Извлечение ВСЕХ iframe (реклама загружается через iframe)"
-    },
-    {
-      "id": "step_14b",
-      "type": "extract",
-      "selector": "a[target='_blank'][rel*='nofollow'], a[target='_blank'][rel*='sponsored'], a[rel*='noopener'][href*='http']",
-      "attribute": "href",
-      "save_as": "ad_links",
-      "multiple": true,
-      "append": true,
-      "description": "Извлечение внешних спонсорских ссылок"
     },
     {
       "id": "step_15",
@@ -119,32 +99,12 @@
         {
           "id": "loop_step_4",
           "type": "extract",
-          "selector": "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], a[href*='googlesyndication'], a[href*='pagead'], a[href*='adservice'], a[href*='amazon-adsystem'], a[href*='media.net'], a[href*='outbrain'], a[href*='taboola'], a[href*='ezoic'], a[href*='ad.'], a[href*='ads.'], a[href*='click'], a[href*='track'], a[href*='affiliate'], a[href*='partner'], ins.adsbygoogle a, .ad a, .ads a, .advertisement a, [class*='ad-'] a, [class*='ads-'] a",
-          "attribute": "href",
+          "selector": "iframe[src]",
+          "attribute": "src",
           "save_as": "ad_links",
           "multiple": true,
           "append": true,
-          "description": "Сбор рекламных ссылок (расширенные селекторы)"
-        },
-          {
-            "id": "loop_step_5",
-            "type": "extract",
-            "selector": "iframe[src]",
-            "attribute": "src",
-            "save_as": "ad_links",
-            "multiple": true,
-            "append": true,
-            "description": "Сбор ВСЕХ iframe (реклама)"
-          },
-        {
-          "id": "loop_step_5b",
-          "type": "extract",
-          "selector": "a[target='_blank'][rel*='nofollow'], a[target='_blank'][rel*='sponsored'], a[rel*='noopener'][href*='http']",
-          "attribute": "href",
-          "save_as": "ad_links",
-          "multiple": true,
-          "append": true,
-          "description": "Сбор внешних спонсорских ссылок"
+          "description": "Сбор ВСЕХ iframe (реклама)"
         },
         {
           "id": "loop_step_6",
