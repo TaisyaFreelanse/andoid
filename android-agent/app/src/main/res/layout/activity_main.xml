@@ -134,5 +134,61 @@
             android:gravity="center"
             android:layout_gravity="center" />
 
+        <!-- Task Status Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="4dp"
+            xmlns:app="http://schemas.android.com/apk/res-auto">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Текущая задача"
+                    android:textSize="14sp"
+                    android:textColor="@android:color/darker_gray"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/taskStatusText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Нет активных задач"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Hidden WebView Container for automation -->
+        <FrameLayout
+            android:id="@+id/webViewContainer"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_marginTop="16dp"
+            android:visibility="visible">
+
+            <WebView
+                android:id="@+id/automationWebView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="WebView для автоматизации"
+                android:textColor="@android:color/darker_gray"
+                android:textSize="12sp" />
+
+        </FrameLayout>
+
     </LinearLayout>
 </ScrollView>

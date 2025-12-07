@@ -4,10 +4,13 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Gravity
+import android.view.WindowManager
 import android.webkit.*
 import com.automation.agent.network.ProxyManager
 import kotlinx.coroutines.*
@@ -48,6 +51,8 @@ class WebViewController(
     private var currentUrl: String = ""
     private var pageTitle: String = ""
     private var customUserAgent: String? = null
+    private var windowManager: WindowManager? = null
+    private var isAddedToWindow = false
 
     // ==================== Initialization ====================
 
@@ -58,6 +63,43 @@ class WebViewController(
             webView = WebView(context).apply {
                 setupWebView(this)
             }
+            
+            // Add WebView to WindowManager so it can render properly
+            try {
+                windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                
+                val params = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        WindowManager.LayoutParams.TYPE_PHONE
+                    },
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    PixelFormat.TRANSLUCENT
+                ).apply {
+                    gravity = Gravity.TOP or Gravity.START
+                    x = 0
+                    y = 0
+                    // Make it small/invisible but still rendered
+                    width = 360
+                    height = 640
+                    alpha = 0.01f // Almost invisible
+                }
+                
+                windowManager?.addView(webView, params)
+                isAddedToWindow = true
+                Log.i(TAG, "WebView added to WindowManager for proper rendering")
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not add WebView to WindowManager: ${e.message}. " +
+                    "WebView may not render properly. Grant SYSTEM_ALERT_WINDOW permission for better compatibility.")
+                // Continue without window - some operations may still work
+            }
+            
             isInitialized.set(true)
             Log.i(TAG, "WebView initialized")
         }
@@ -615,6 +657,17 @@ class WebViewController(
 
     override suspend fun close() {
         withContext(Dispatchers.Main) {
+            // Remove from WindowManager first
+            if (isAddedToWindow && webView != null) {
+                try {
+                    windowManager?.removeView(webView)
+                    isAddedToWindow = false
+                    Log.d(TAG, "WebView removed from WindowManager")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error removing WebView from WindowManager: ${e.message}")
+                }
+            }
+            
             webView?.apply {
                 stopLoading()
                 clearHistory()
@@ -624,6 +677,7 @@ class WebViewController(
                 destroy()
             }
             webView = null
+            windowManager = null
             isInitialized.set(false)
             Log.i(TAG, "WebView closed")
         }

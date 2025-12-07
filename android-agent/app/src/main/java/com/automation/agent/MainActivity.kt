@@ -6,9 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -32,6 +34,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 1001
+        private const val OVERLAY_PERMISSION_REQUEST_CODE = 1002
     }
 
     private lateinit var statusText: TextView
@@ -74,6 +77,9 @@ class MainActivity : AppCompatActivity() {
         // Check and request permissions
         checkPermissions()
         
+        // Check overlay permission for WebView
+        checkOverlayPermission()
+        
         // Display device info
         displayDeviceInfo()
         
@@ -94,6 +100,45 @@ class MainActivity : AppCompatActivity() {
         
         startStopButton.setOnClickListener {
             toggleService()
+        }
+    }
+
+    private fun checkOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Toast.makeText(
+                    this,
+                    "Для работы автоматизации требуется разрешение 'Поверх других приложений'",
+                    Toast.LENGTH_LONG
+                ).show()
+                
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST_CODE)
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == OVERLAY_PERMISSION_REQUEST_CODE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (Settings.canDrawOverlays(this)) {
+                    Toast.makeText(this, "Разрешение на overlay получено!", Toast.LENGTH_SHORT).show()
+                    // Restart service to apply new permissions
+                    stopControllerService()
+                    startControllerService()
+                } else {
+                    Toast.makeText(
+                        this,
+                        "Разрешение не получено. Автоматизация может работать некорректно.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
     }
 

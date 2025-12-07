@@ -1,0 +1,149 @@
+{
+  "id": "simple-ad-parsing",
+  "name": "Простой парсинг рекламы (iframe)",
+  "description": "Переходы по страницам сайта и сбор iframe рекламы",
+  "type": "parsing",
+  "timeout": 300000,
+  "steps": [
+    {
+      "id": "step_0",
+      "type": "wait",
+      "duration": 2000
+    },
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "https://www.pickuplineinsider.com/",
+      "wait_for_load": true,
+      "timeout": 30000
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 5000
+    },
+    {
+      "id": "step_3",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 500,
+      "smooth": true
+    },
+    {
+      "id": "step_4",
+      "type": "wait",
+      "duration": 3000
+    },
+    {
+      "id": "step_5",
+      "type": "extract",
+      "selector": "iframe[src]",
+      "attribute": "src",
+      "save_as": "ad_links_page1",
+      "multiple": true
+    },
+    {
+      "id": "step_6",
+      "type": "click",
+      "selector": "a[href*='pick-up-lines']:not([href*='#'])",
+      "optional": true,
+      "timeout": 5000
+    },
+    {
+      "id": "step_7",
+      "type": "wait",
+      "duration": 4000
+    },
+    {
+      "id": "step_8",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 400,
+      "smooth": true
+    },
+    {
+      "id": "step_9",
+      "type": "wait",
+      "duration": 3000
+    },
+    {
+      "id": "step_10",
+      "type": "extract",
+      "selector": "iframe[src]",
+      "attribute": "src",
+      "save_as": "ad_links_page2",
+      "multiple": true
+    },
+    {
+      "id": "step_11",
+      "type": "click",
+      "selector": "a[href*='pick-up-lines']:not([href*='#'])",
+      "optional": true,
+      "timeout": 5000
+    },
+    {
+      "id": "step_12",
+      "type": "wait",
+      "duration": 4000
+    },
+    {
+      "id": "step_13",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 400,
+      "smooth": true
+    },
+    {
+      "id": "step_14",
+      "type": "wait",
+      "duration": 3000
+    },
+    {
+      "id": "step_15",
+      "type": "extract",
+      "selector": "iframe[src]",
+      "attribute": "src",
+      "save_as": "ad_links_page3",
+      "multiple": true
+    },
+    {
+      "id": "step_16",
+      "type": "click",
+      "selector": "a[href*='pick-up-lines']:not([href*='#'])",
+      "optional": true,
+      "timeout": 5000
+    },
+    {
+      "id": "step_17",
+      "type": "wait",
+      "duration": 4000
+    },
+    {
+      "id": "step_18",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 400,
+      "smooth": true
+    },
+    {
+      "id": "step_19",
+      "type": "wait",
+      "duration": 3000
+    },
+    {
+      "id": "step_20",
+      "type": "extract",
+      "selector": "iframe[src]",
+      "attribute": "src",
+      "save_as": "ad_links",
+      "multiple": true,
+      "description": "Финальный сбор iframe - это будет в результате"
+    },
+    {
+      "id": "step_21",
+      "type": "screenshot",
+      "full_page": false
+    }
+  ]
+}
+
