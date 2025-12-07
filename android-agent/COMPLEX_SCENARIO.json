@@ -1,0 +1,256 @@
+{
+  "id": "complex-ad-parsing-scenario",
+  "name": "Комплексный сценарий: Парсинг рекламных баннеров с уникализацией",
+  "description": "1) Уникализация устройства (прокси, гео, таймзона, язык) → 2) Поиск в Google → 3) Переход на сайт → 4) 5-6 переходов внутри сайта с сбором addurl с баннеров → 5) Повторение с новой уникализацией",
+  "version": "1.0",
+  "type": "parsing",
+  "browser": "chrome",
+  "proxy": "auto",
+  "timeout": 600000,
+  "retries": 2,
+  "requires_root": true,
+  "config": {
+    "wait_for_ads": true,
+    "scroll_before_extract": true,
+    "take_screenshots": true,
+    "human_like": true,
+    "random_delays": true,
+    "min_delay": 2000,
+    "max_delay": 5000
+  },
+  "variables": {
+    "search_query": "site:pickuplineinsider.com",
+    "max_internal_pages": "6",
+    "max_iterations": "3"
+  },
+  "steps": [
+    {
+      "id": "step_0",
+      "type": "wait",
+      "duration": 2000,
+      "description": "Начальная задержка"
+    },
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "https://www.google.com",
+      "wait_for_load": true,
+      "timeout": 30000,
+      "description": "Переход на Google.com"
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 3000,
+      "random_offset": 1000,
+      "description": "Ожидание загрузки страницы"
+    },
+    {
+      "id": "step_3",
+      "type": "input",
+      "selector": "input[name='q'], textarea[name='q'], input[type='text'][name='q'], input[aria-label*='Поиск'], input[aria-label*='Search']",
+      "value": "site:pickuplineinsider.com",
+      "clear_before": true,
+      "description": "Ввод поискового запроса"
+    },
+    {
+      "id": "step_4",
+      "type": "wait",
+      "duration": 1000,
+      "description": "Пауза после ввода"
+    },
+    {
+      "id": "step_5",
+      "type": "click",
+      "selector": "input[type='submit'][value*='Поиск'], input[type='submit'][value*='Search'], button[type='submit'], input[aria-label*='Поиск'], input[aria-label*='Search'], button[aria-label*='Поиск'], button[aria-label*='Search'], form[action='/search'] button, form[action='/search'] input[type='submit']",
+      "timeout": 5000,
+      "description": "Нажатие кнопки поиска"
+    },
+    {
+      "id": "step_6",
+      "type": "wait",
+      "duration": 5000,
+      "random_offset": 2000,
+      "description": "Ожидание результатов поиска"
+    },
+    {
+      "id": "step_7",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 300,
+      "smooth": true,
+      "description": "Прокрутка для загрузки результатов"
+    },
+    {
+      "id": "step_8",
+      "type": "wait",
+      "duration": 2000,
+      "description": "Ожидание после прокрутки"
+    },
+    {
+      "id": "step_9",
+      "type": "click",
+      "selector": "div[data-ved] a[href*='pickuplineinsider.com'], div.g a[href*='pickuplineinsider.com'], h3 a[href*='pickuplineinsider.com'], a[href*='pickuplineinsider.com'][data-ved], .g a[href*='pickuplineinsider.com']",
+      "optional": false,
+      "timeout": 15000,
+      "description": "Клик по случайной ссылке из результатов поиска (первая найденная)"
+    },
+    {
+      "id": "step_10",
+      "type": "wait",
+      "duration": 5000,
+      "random_offset": 2000,
+      "description": "Ожидание загрузки сайта"
+    },
+    {
+      "id": "step_11",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 500,
+      "smooth": true,
+      "description": "Прокрутка страницы для загрузки баннеров"
+    },
+    {
+      "id": "step_12",
+      "type": "wait",
+      "duration": 3000,
+      "description": "Ожидание загрузки рекламы"
+    },
+    {
+      "id": "step_13",
+      "type": "extract",
+      "selector": "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], a[href*='googlesyndication'], a[href*='pagead'], a[href*='adservice'], iframe[src*='adurl'], iframe[src*='googleads'], iframe[src*='doubleclick'], iframe[src*='googlesyndication'], [data-ad-url], [data-adurl]",
+      "attribute": "href",
+      "save_as": "ad_links",
+      "multiple": true,
+      "append": false,
+      "description": "Извлечение ссылок с баннеров (первая страница)"
+    },
+    {
+      "id": "step_14",
+      "type": "extract",
+      "selector": "iframe[src*='adurl'], iframe[src*='googleads'], iframe[src*='doubleclick'], iframe[src*='googlesyndication'], iframe[src*='pagead']",
+      "attribute": "src",
+      "save_as": "ad_links",
+      "multiple": true,
+      "append": true,
+      "description": "Извлечение ссылок из iframe баннеров"
+    },
+    {
+      "id": "step_14b",
+      "type": "extract",
+      "selector": "[data-ad-url], [data-adurl]",
+      "attribute": "data-ad-url",
+      "save_as": "ad_links",
+      "multiple": true,
+      "append": true,
+      "description": "Извлечение ссылок из data-атрибутов баннеров"
+    },
+    {
+      "id": "step_15",
+      "type": "loop",
+      "max_iterations": 6,
+      "description": "Цикл переходов по внутренним страницам сайта",
+      "steps": [
+        {
+          "id": "loop_step_1",
+          "type": "wait",
+          "duration": 2000,
+          "random_offset": 1000,
+          "description": "Пауза перед переходом"
+        },
+        {
+          "id": "loop_step_2",
+          "type": "scroll",
+          "direction": "down",
+          "percent": 50,
+          "smooth": true,
+          "description": "Прокрутка страницы"
+        },
+        {
+          "id": "loop_step_3",
+          "type": "wait",
+          "duration": 2000,
+          "description": "Ожидание после прокрутки"
+        },
+        {
+          "id": "loop_step_4",
+          "type": "extract",
+          "selector": "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], a[href*='googlesyndication'], a[href*='pagead'], a[href*='adservice'], iframe[src*='adurl'], iframe[src*='googleads'], iframe[src*='doubleclick'], iframe[src*='googlesyndication'], [data-ad-url], [data-adurl]",
+          "attribute": "href",
+          "save_as": "ad_links",
+          "multiple": true,
+          "append": true,
+          "description": "Сбор ссылок с баннеров на текущей странице"
+        },
+        {
+          "id": "loop_step_5",
+          "type": "extract",
+          "selector": "iframe[src*='adurl'], iframe[src*='googleads'], iframe[src*='doubleclick'], iframe[src*='googlesyndication'], iframe[src*='pagead']",
+          "attribute": "src",
+          "save_as": "ad_links",
+          "multiple": true,
+          "append": true,
+          "description": "Сбор ссылок из iframe баннеров"
+        },
+        {
+          "id": "loop_step_5b",
+          "type": "extract",
+          "selector": "[data-ad-url], [data-adurl]",
+          "attribute": "data-ad-url",
+          "save_as": "ad_links",
+          "multiple": true,
+          "append": true,
+          "description": "Сбор ссылок из data-атрибутов баннеров"
+        },
+        {
+          "id": "loop_step_6",
+          "type": "click",
+          "selector": "a[href*='pickuplineinsider.com']:not([href*='#']):not([href*='javascript'])",
+          "optional": true,
+          "timeout": 5000,
+          "description": "Клик по случайной внутренней ссылке сайта"
+        },
+        {
+          "id": "loop_step_7",
+          "type": "wait",
+          "duration": 3000,
+          "random_offset": 2000,
+          "description": "Ожидание загрузки новой страницы"
+        },
+        {
+          "id": "loop_step_8",
+          "type": "scroll",
+          "direction": "down",
+          "pixels": 400,
+          "smooth": true,
+          "description": "Прокрутка новой страницы"
+        },
+        {
+          "id": "loop_step_9",
+          "type": "wait",
+          "duration": 3000,
+          "description": "Ожидание загрузки баннеров на новой странице"
+        }
+      ]
+    },
+    {
+      "id": "step_16",
+      "type": "screenshot",
+      "full_page": false,
+      "description": "Финальный скриншот"
+    }
+  ],
+  "post_process": {
+    "extract_adurl": true,
+    "deduplicate_domains": true,
+    "save_to_backend": true,
+    "export_format": "json"
+  },
+  "output": {
+    "format": "json",
+    "include_screenshots": true,
+    "include_metadata": true
+  }
+}
+

@@ -261,7 +261,9 @@ export async function agentRoutes(fastify: FastifyInstance) {
       hasData: !!body.data,
       hasResult: !!body.result,
       dataKeys: body.data ? Object.keys(body.data) : [],
-      success: body.success
+      success: body.success,
+      error: body.error,
+      errorMessage: body.error || (body.data?.error ? body.data.error : null)
     }, 'Task result received from Android Agent');
 
     if (!deviceId) {
@@ -284,6 +286,11 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
     // Get the result data
     const resultData = body.result || body.data || {};
+    
+    // Include error in result data if present
+    if (body.error) {
+      resultData.error = body.error;
+    }
 
     try {
       const task = await prisma.task.update({

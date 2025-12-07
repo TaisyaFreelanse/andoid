@@ -1,0 +1,78 @@
+{
+  "id": "uniqueness-setup-scenario",
+  "name": "Уникализация устройства: прокси, гео, таймзона, язык",
+  "description": "Настройка прокси, подмена геолокации, установка таймзоны и языка устройства перед парсингом",
+  "version": "1.0",
+  "type": "uniqueness",
+  "requires_root": true,
+  "timeout": 180000,
+  "config": {
+    "backup_before": true,
+    "reboot_after": false,
+    "verify_changes": true,
+    "auto_detect_country": true,
+    "use_proxy_geolocation": true
+  },
+  "actions": [
+    {
+      "id": "action1",
+      "type": "regenerate_android_id",
+      "description": "Регенерация Android ID"
+    },
+    {
+      "id": "action2",
+      "type": "regenerate_aaid",
+      "description": "Регенерация AAID (Advertising ID)"
+    },
+    {
+      "id": "action3",
+      "type": "change_user_agent",
+      "ua": "random",
+      "description": "Изменение User-Agent на случайный"
+    },
+    {
+      "id": "action4",
+      "type": "change_timezone",
+      "timezone": "auto",
+      "country_code": "auto",
+      "description": "Установка таймзоны на основе прокси (автоматически)"
+    },
+    {
+      "id": "action5",
+      "type": "change_location",
+      "latitude": "auto",
+      "longitude": "auto",
+      "description": "Установка геолокации на основе прокси (автоматически)"
+    },
+    {
+      "id": "action6",
+      "type": "change_locale",
+      "locale": "auto",
+      "description": "Установка языка на основе геолокации (автоматически)"
+    },
+    {
+      "id": "action7",
+      "type": "clear_chrome_data",
+      "description": "Очистка данных Chrome"
+    },
+    {
+      "id": "action8",
+      "type": "clear_webview_data",
+      "description": "Очистка данных WebView"
+    },
+    {
+      "id": "action9",
+      "type": "modify_fingerprint",
+      "description": "Изменение fingerprint устройства"
+    }
+  ],
+  "post_process": {
+    "verify_android_id_changed": true,
+    "verify_user_agent_changed": true,
+    "verify_timezone_matches_proxy": true,
+    "verify_location_matches_proxy": true,
+    "log_new_fingerprint": true,
+    "send_to_backend": true
+  }
+}
+
