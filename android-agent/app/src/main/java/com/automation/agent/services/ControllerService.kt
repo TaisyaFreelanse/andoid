@@ -117,8 +117,11 @@ class ControllerService : LifecycleService() {
         deviceId = prefs.getString(KEY_DEVICE_ID, null)
         isRegistered.set(prefs.getBoolean(KEY_IS_REGISTERED, false))
         
-        // Set device ID in API client
-        deviceId?.let { apiClient.setDeviceId(it) }
+        // Set device ID in API client and TaskExecutor
+        deviceId?.let { 
+            apiClient.setDeviceId(it)
+            taskExecutor.setDeviceId(it)
+        }
         
         // Load and set auth token
         prefs.getString(KEY_AGENT_TOKEN, null)?.let { 
