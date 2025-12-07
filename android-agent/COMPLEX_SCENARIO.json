@@ -72,12 +72,12 @@
     {
       "id": "step_14",
       "type": "extract",
-      "selector": "iframe[src*='ad'], iframe[src*='google'], iframe[src*='doubleclick'], iframe[src*='amazon'], iframe[id*='ad'], iframe[class*='ad']",
+      "selector": "iframe[src]",
       "attribute": "src",
       "save_as": "ad_links",
       "multiple": true,
       "append": true,
-      "description": "Извлечение ссылок из рекламных iframe"
+      "description": "Извлечение ВСЕХ iframe (реклама загружается через iframe)"
     },
     {
       "id": "step_14b",
@@ -126,16 +126,16 @@
           "append": true,
           "description": "Сбор рекламных ссылок (расширенные селекторы)"
         },
-        {
-          "id": "loop_step_5",
-          "type": "extract",
-          "selector": "iframe[src*='ad'], iframe[src*='google'], iframe[src*='doubleclick'], iframe[src*='amazon'], iframe[id*='ad'], iframe[class*='ad']",
-          "attribute": "src",
-          "save_as": "ad_links",
-          "multiple": true,
-          "append": true,
-          "description": "Сбор ссылок из рекламных iframe"
-        },
+          {
+            "id": "loop_step_5",
+            "type": "extract",
+            "selector": "iframe[src]",
+            "attribute": "src",
+            "save_as": "ad_links",
+            "multiple": true,
+            "append": true,
+            "description": "Сбор ВСЕХ iframe (реклама)"
+          },
         {
           "id": "loop_step_5b",
           "type": "extract",
