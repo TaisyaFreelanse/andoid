@@ -283,6 +283,14 @@ export async function agentRoutes(fastify: FastifyInstance) {
     } else if (body.success === false || body.error) {
       finalStatus = 'failed';
     }
+    
+    logger.info({
+      taskId,
+      bodySuccess: body.success,
+      bodyError: body.error,
+      bodyStatus: body.status,
+      determinedStatus: finalStatus
+    }, 'Determining task final status');
 
     // Get the result data
     const resultData = body.result || body.data || {};
@@ -293,6 +301,8 @@ export async function agentRoutes(fastify: FastifyInstance) {
     }
 
     try {
+      logger.info({ taskId, finalStatus, resultDataKeys: Object.keys(resultData) }, 'Updating task status in database');
+      
       const task = await prisma.task.update({
         where: { id: taskId },
         data: {
@@ -301,6 +311,13 @@ export async function agentRoutes(fastify: FastifyInstance) {
           completedAt: new Date(),
         },
       });
+      
+      logger.info({ 
+        taskId, 
+        updatedStatus: task.status, 
+        taskName: task.name,
+        hasCompletedAt: !!task.completedAt 
+      }, 'Task status updated successfully');
 
       // Auto-save to parsed data ONLY for parsing tasks
       const taskType = task.type?.toLowerCase() || '';
