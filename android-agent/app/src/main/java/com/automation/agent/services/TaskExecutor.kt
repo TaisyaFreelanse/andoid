@@ -9,6 +9,9 @@ import com.automation.agent.browser.BrowserController
 import com.automation.agent.browser.BrowserSelector
 import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
+import com.automation.agent.services.UniquenessService
+import com.automation.agent.utils.GeoLocationHelper
+import com.automation.agent.utils.RootUtils
 import kotlinx.coroutines.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -63,6 +66,11 @@ class TaskExecutor(
     private val executionResults = ConcurrentHashMap<String, Any>()
     private var currentTaskId: String? = null
     
+    // Uniqueness services
+    private val rootUtils = RootUtils()
+    private val uniquenessService = UniquenessService(context, rootUtils)
+    private val geoLocationHelper = GeoLocationHelper()
+    
     // Callbacks
     var onStepStarted: ((String, TaskStep) -> Unit)? = null
     var onStepCompleted: ((String, TaskStep, StepResult) -> Unit)? = null
@@ -88,6 +96,11 @@ class TaskExecutor(
         try {
             // Update task status to "running"
             apiClient.updateTaskStatus(task.id, "running")
+            
+            // Apply uniqueness (proxy, timezone, geolocation, language) if proxy is set
+            if (task.proxy != null && task.proxy != "none") {
+                applyUniqueness(task.proxy)
+            }
             
             // Initialize browser
             currentBrowser = browserSelector.selectBrowser(task.browser)
@@ -367,6 +380,7 @@ class TaskExecutor(
                     ""
                 }
                 
+                // First, try to parse adurl from links
                 val adUrls = results.mapNotNull { link ->
                     val adUrl = parser.parseAdUrl(link)
                     // Filter out adUrls that match the current domain
@@ -393,15 +407,72 @@ class TaskExecutor(
                     }
                 }.filterNotNull()
                 
+                // Also, if link itself contains adurl parameter or is from ad network, use it directly
+                val directAdUrls = results.mapNotNull { link ->
+                    // Check if link itself is an ad URL (contains adurl parameter or is from ad network)
+                    if (link.contains("adurl") || link.contains("googleads") || link.contains("doubleclick") || 
+                        link.contains("googlesyndication") || link.contains("adservice")) {
+                        // Try to parse adurl from the link
+                        val parsed = parser.parseAdUrl(link)
+                        if (parsed != null && currentDomain.isNotEmpty()) {
+                            try {
+                                val adDomain = java.net.URL(parsed).host
+                                if (adDomain != currentDomain && !adDomain.contains(currentDomain) && !currentDomain.contains(adDomain)) {
+                                    parsed
+                                } else {
+                                    null
+                                }
+                            } catch (e: Exception) {
+                                if (parsed != currentUrl) parsed else null
+                            }
+                        } else {
+                            parsed
+                        }
+                    } else {
+                        null
+                    }
+                }.filterNotNull()
+                
+                // Also try to extract all links from page that might be ad links
+                // This helps find links that can be copied (like in the screenshot)
+                val allPageLinks = try {
+                    extractAllPageLinks(browser, currentDomain)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to extract all page links: ${e.message}")
+                    emptyList()
+                }
+                
+                val pageAdUrls = allPageLinks.mapNotNull { link ->
+                    val adUrl = parser.parseAdUrl(link)
+                    if (adUrl != null && currentDomain.isNotEmpty()) {
+                        try {
+                            val adDomain = java.net.URL(adUrl).host
+                            if (adDomain != currentDomain && !adDomain.contains(currentDomain) && !currentDomain.contains(adDomain)) {
+                                adUrl
+                            } else {
+                                null
+                            }
+                        } catch (e: Exception) {
+                            if (adUrl != currentUrl) adUrl else null
+                        }
+                    } else {
+                        adUrl
+                    }
+                }.filterNotNull()
+                
+                val allAdUrls = (adUrls + directAdUrls + pageAdUrls).distinct()
+                
                 val existingAdUrls = executionResults["ad_urls"] as? MutableList<String> ?: mutableListOf()
-                existingAdUrls.addAll(adUrls)
+                existingAdUrls.addAll(allAdUrls)
                 executionResults["ad_urls"] = existingAdUrls
                 
                 // Extract domains
-                val domains = parser.deduplicateDomains(adUrls)
+                val domains = parser.deduplicateDomains(allAdUrls)
                 val existingDomains = executionResults["ad_domains"] as? MutableList<String> ?: mutableListOf()
                 existingDomains.addAll(domains)
                 executionResults["ad_domains"] = existingDomains.distinct()
+                
+                Log.d(TAG, "Extracted ${allAdUrls.size} ad URLs from ${results.size} links + ${allPageLinks.size} page links")
             }
             
             StepResult(
@@ -679,11 +750,47 @@ class TaskExecutor(
                 "el.innerHTML || ''"
             attribute == "outerHtml" -> 
                 "el.outerHTML || ''"
+            attribute == "href" -> 
+                "el.href || el.getAttribute('href') || ''"
             else -> 
                 "el.getAttribute('$attribute') || ''"
         }
         
-        val script = """
+        // Special handling for href attribute - try multiple ways to get the link
+        val hrefScript = if (attribute == "href") {
+            """
+            (function() {
+                try {
+                    var elements = document.querySelectorAll('$selector');
+                    var results = [];
+                    elements.forEach(function(el) {
+                        // Try multiple ways to get href
+                        var href = el.href || el.getAttribute('href') || '';
+                        // If element is not a link, try to find link inside it
+                        if (!href && el.querySelector) {
+                            var linkInside = el.querySelector('a[href]');
+                            if (linkInside) {
+                                href = linkInside.href || linkInside.getAttribute('href') || '';
+                            }
+                        }
+                        // If still no href, try to get onclick handler or data attributes
+                        if (!href) {
+                            var onclick = el.getAttribute('onclick') || '';
+                            var dataHref = el.getAttribute('data-href') || el.getAttribute('data-url') || '';
+                            href = dataHref || onclick;
+                        }
+                        if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                            results.push(href.trim());
+                        }
+                    });
+                    return JSON.stringify(results);
+                } catch(e) {
+                    return JSON.stringify([]);
+                }
+            })();
+            """.trimIndent()
+        } else {
+            """
             (function() {
                 try {
                     var elements = document.querySelectorAll('$selector');
@@ -699,9 +806,10 @@ class TaskExecutor(
                     return JSON.stringify([]);
                 }
             })();
-        """.trimIndent()
+            """.trimIndent()
+        }
         
-        val result = browser.evaluateJavascript(script)
+        val result = browser.evaluateJavascript(hrefScript)
         Log.d(TAG, "JavaScript extraction result: ${result?.take(200)}")
         
         return try {
@@ -728,6 +836,102 @@ class TaskExecutor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse JavaScript result: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Extract all links from page that might be ad links
+     * This helps find links that can be copied (like "Copy link address" in context menu)
+     */
+    private suspend fun extractAllPageLinks(browser: BrowserController, excludeDomain: String): List<String> {
+        val script = """
+            (function() {
+                try {
+                    var links = [];
+                    // Get all links on page
+                    var allLinks = document.querySelectorAll('a[href]');
+                    allLinks.forEach(function(a) {
+                        var href = a.href || a.getAttribute('href') || '';
+                        if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                            links.push(href.trim());
+                        }
+                    });
+                    // Also try to get links from ad containers
+                    var adContainers = document.querySelectorAll('ins.adsbygoogle, .ad, .ads, .advertisement, [class*="ad-"], [id*="ad-"]');
+                    adContainers.forEach(function(container) {
+                        var containerLinks = container.querySelectorAll('a[href]');
+                        containerLinks.forEach(function(a) {
+                            var href = a.href || a.getAttribute('href') || '';
+                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                                links.push(href.trim());
+                            }
+                        });
+                    });
+                    // Also try to get links near iframes (sibling elements)
+                    var iframes = document.querySelectorAll('iframe[src*="googlesyndication"], iframe[src*="doubleclick"]');
+                    iframes.forEach(function(iframe) {
+                        // Try to get parent element and find links inside
+                        var parent = iframe.parentElement;
+                        if (parent) {
+                            var parentLinks = parent.querySelectorAll('a[href]');
+                            parentLinks.forEach(function(a) {
+                                var href = a.href || a.getAttribute('href') || '';
+                                if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                                    links.push(href.trim());
+                                }
+                            });
+                        }
+                        // Try to get next sibling
+                        var nextSibling = iframe.nextElementSibling;
+                        if (nextSibling && nextSibling.tagName === 'A') {
+                            var href = nextSibling.href || nextSibling.getAttribute('href') || '';
+                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                                links.push(href.trim());
+                            }
+                        }
+                    });
+                    // Remove duplicates
+                    return JSON.stringify([...new Set(links)]);
+                } catch(e) {
+                    return JSON.stringify([]);
+                }
+            })();
+        """.trimIndent()
+        
+        val result = browser.evaluateJavascript(script)
+        
+        return try {
+            if (result.isNullOrEmpty() || result == "null" || result == "[]") {
+                emptyList()
+            } else {
+                val cleanResult = result.trim()
+                    .removePrefix("\"")
+                    .removeSuffix("\"")
+                    .replace("\\\"", "\"")
+                    .replace("\\n", "\n")
+                
+                if (cleanResult.startsWith("[") && cleanResult.endsWith("]")) {
+                    cleanResult
+                        .removeSurrounding("[", "]")
+                        .split("\",\"")
+                        .map { it.trim().removePrefix("\"").removeSuffix("\"") }
+                        .filter { it.isNotEmpty() && it.startsWith("http") }
+                        .filter { link ->
+                            // Filter out links from current domain
+                            try {
+                                val linkDomain = java.net.URL(link).host
+                                linkDomain != excludeDomain && !linkDomain.contains(excludeDomain) && !excludeDomain.contains(linkDomain)
+                            } catch (e: Exception) {
+                                true
+                            }
+                        }
+                } else {
+                    emptyList()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse page links: ${e.message}")
             emptyList()
         }
     }
@@ -799,6 +1003,82 @@ class TaskExecutor(
      * Get current task ID
      */
     fun getCurrentTaskId(): String? = currentTaskId
+
+    /**
+     * Apply uniqueness settings (proxy, timezone, geolocation, language)
+     */
+    private suspend fun applyUniqueness(proxyString: String) {
+        if (proxyString == "auto" || proxyString.isEmpty()) {
+            Log.i(TAG, "Proxy is 'auto', skipping uniqueness")
+            return
+        }
+
+        Log.i(TAG, "Applying uniqueness with proxy: $proxyString")
+
+        try {
+            // 1. Parse and apply proxy
+            val proxyConfig = when {
+                proxyString.startsWith("socks5://") -> ProxyManager.parseSocks5(proxyString)
+                proxyString.startsWith("http://") || proxyString.startsWith("https://") -> ProxyManager.parseHttp(proxyString)
+                else -> ProxyManager.parse(proxyString)
+            }
+
+            if (proxyConfig != null) {
+                proxyManager.clearProxies()
+                proxyManager.addProxy(proxyConfig)
+                apiClient.updateProxy()
+                Log.i(TAG, "Proxy applied: ${proxyConfig.host}:${proxyConfig.port}")
+            } else {
+                Log.w(TAG, "Failed to parse proxy: $proxyString")
+                return
+            }
+
+            // 2. Get geolocation from proxy IP
+            val geoLocation = withContext(Dispatchers.IO) {
+                delay(2000) // Wait for proxy to be active
+                geoLocationHelper.getCurrentIpLocation()
+            }
+
+            if (geoLocation != null) {
+                Log.i(TAG, "Proxy geolocation: ${geoLocation.country} (${geoLocation.city}), timezone: ${geoLocation.timezone}")
+
+                // 3. Change timezone
+                if (geoLocation.timezone.isNotEmpty()) {
+                    uniquenessService.changeTimezone(geoLocation.timezone)
+                    Log.i(TAG, "Timezone changed to: ${geoLocation.timezone}")
+                } else if (geoLocation.country.isNotEmpty()) {
+                    uniquenessService.changeTimezoneByCountry(geoLocation.country)
+                    Log.i(TAG, "Timezone changed by country: ${geoLocation.country}")
+                }
+
+                // 4. Change geolocation (GPS coordinates)
+                if (geoLocation.latitude != null && geoLocation.longitude != null) {
+                    uniquenessService.changeLocation(geoLocation.latitude, geoLocation.longitude)
+                    Log.i(TAG, "Location changed to: ${geoLocation.latitude}, ${geoLocation.longitude}")
+                } else if (geoLocation.country.isNotEmpty()) {
+                    uniquenessService.changeLocationByCountry(geoLocation.country)
+                    Log.i(TAG, "Location changed by country: ${geoLocation.country}")
+                }
+
+                // 5. Change language/locale
+                if (geoLocation.country.isNotEmpty()) {
+                    uniquenessService.changeLocaleByCountry(geoLocation.country)
+                    Log.i(TAG, "Locale changed by country: ${geoLocation.country}")
+                }
+            } else {
+                Log.w(TAG, "Could not determine proxy geolocation, using defaults")
+                // Fallback: use US defaults
+                uniquenessService.changeTimezoneByCountry("US")
+                uniquenessService.changeLocationByCountry("US")
+                uniquenessService.changeLocaleByCountry("US")
+            }
+
+            // Wait a bit for settings to apply
+            delay(1000)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying uniqueness: ${e.message}", e)
+        }
+    }
 
     // ==================== Data Classes ====================
 

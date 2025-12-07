@@ -486,6 +486,43 @@ class UniquenessService(
         return rootUtils.deleteSetting("secure", "mock_location_app")
     }
 
+    // ==================== Language/Locale ====================
+
+    /**
+     * Change device language/locale
+     */
+    suspend fun changeLocale(locale: String): Boolean {
+        Log.i(TAG, "Changing locale to: $locale")
+        
+        // Set locale via system settings
+        val result1 = rootUtils.setGlobalSetting("locale", locale)
+        
+        // Also set via property (persistent)
+        val result2 = rootUtils.setProperty("persist.sys.locale", locale)
+        
+        // Set language via settings
+        val result3 = rootUtils.executeCommand("setprop persist.sys.language ${locale.split("_")[0]}")
+        val result4 = rootUtils.executeCommand("setprop persist.sys.country ${locale.split("_").getOrNull(1) ?: ""}")
+        
+        Log.i(TAG, "Locale changed to: $locale, results: $result1, $result2, ${result3.success}, ${result4.success}")
+        return result1 || result2 || result3.success || result4.success
+    }
+
+    /**
+     * Change locale based on country code
+     */
+    suspend fun changeLocaleByCountry(countryCode: String): Boolean {
+        val locales = mapOf(
+            "US" to "en_US", "GB" to "en_GB", "CA" to "en_CA", "AU" to "en_AU",
+            "RU" to "ru_RU", "DE" to "de_DE", "FR" to "fr_FR", "ES" to "es_ES",
+            "IT" to "it_IT", "PT" to "pt_PT", "BR" to "pt_BR", "JP" to "ja_JP",
+            "CN" to "zh_CN", "KR" to "ko_KR", "IN" to "en_IN", "MX" to "es_MX"
+        )
+        
+        val locale = locales[countryCode.uppercase()] ?: "en_US"
+        return changeLocale(locale)
+    }
+
     // ==================== Full Uniqueness ====================
 
     /**

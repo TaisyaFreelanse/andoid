@@ -89,13 +89,24 @@
     {
       "id": "step_13b",
       "type": "extract",
+      "selector": "ins.adsbygoogle a[href], .ad a[href], .ads a[href], .advertisement a[href], [class*='ad-'] a[href], [id*='ad-'] a[href], iframe[src*='googlesyndication'] + a[href], iframe[src*='doubleclick'] + a[href]",
+      "attribute": "href",
+      "save_as": "ad_links",
+      "multiple": true,
+      "append": true,
+      "extract_adurl": true,
+      "description": "Извлечение ссылок из рекламных контейнеров (аналог 'Copy link address')"
+    },
+    {
+      "id": "step_13c",
+      "type": "extract",
       "selector": "a[href*='adurl']:not([href*='pickuplineinsider.com'])",
       "attribute": "href",
       "save_as": "ad_links",
       "multiple": true,
       "append": true,
       "extract_adurl": true,
-      "description": "Извлечение ссылок с параметром adurl (только извлечение, без клика)"
+      "description": "Извлечение ссылок с параметром adurl (дополнительная проверка)"
     },
     {
       "id": "step_15",
@@ -153,13 +164,24 @@
         {
           "id": "loop_step_4b",
           "type": "extract",
+          "selector": "ins.adsbygoogle a[href], .ad a[href], .ads a[href], .advertisement a[href], [class*='ad-'] a[href], [id*='ad-'] a[href], iframe[src*='googlesyndication'] + a[href], iframe[src*='doubleclick'] + a[href]",
+          "attribute": "href",
+          "save_as": "ad_links",
+          "multiple": true,
+          "append": true,
+          "extract_adurl": true,
+          "description": "Сбор ссылок из рекламных контейнеров (аналог 'Copy link address')"
+        },
+        {
+          "id": "loop_step_4c",
+          "type": "extract",
           "selector": "a[href*='adurl']:not([href*='pickuplineinsider.com'])",
           "attribute": "href",
           "save_as": "ad_links",
           "multiple": true,
           "append": true,
           "extract_adurl": true,
-          "description": "Сбор ссылок с adurl (только извлечение, без клика)"
+          "description": "Сбор ссылок с параметром adurl (дополнительная проверка)"
         },
         {
           "id": "loop_step_5",
@@ -171,10 +193,10 @@
         {
           "id": "loop_step_6",
           "type": "click",
-          "selector": "a[href*='pickuplineinsider.com']:not([href*='#']):not([href*='javascript']):not([href*='mailto']):not([href*='tel']):not([href*='googleads']):not([href*='doubleclick']):not([href*='googlesyndication']):not([href*='adurl']):not([href*='pagead'])",
-          "optional": false,
+          "selector": "a[href*='pickuplineinsider.com']:not([href*='#']):not([href*='javascript']):not([href*='mailto']):not([href*='tel']):not([href*='googleads']):not([href*='doubleclick']):not([href*='googlesyndication']):not([href*='adurl']):not([href*='pagead']):not([href*='adservice'])",
+          "optional": true,
           "timeout": 8000,
-          "description": "Клик по внутренней ссылке сайта (исключая рекламные ссылки)"
+          "description": "Клик по внутренней ссылке сайта (исключая рекламные ссылки, опционально - если нет ссылки, пропускаем)"
         },
         {
           "id": "loop_step_7",
