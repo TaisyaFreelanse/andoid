@@ -26,12 +26,12 @@ class Parser(private val browser: BrowserController) {
         private const val TAG = "Parser"
         
         // Common adurl patterns
+        // NOTE: Не включаем "url" параметр, т.к. в Google AdSense iframe он указывает на текущую страницу, а не на рекламный URL
         private val ADURL_PATTERNS = listOf(
             Regex("[?&]adurl=([^&]+)"),
             Regex("[?&]ad_url=([^&]+)"),
             Regex("[?&]dest_url=([^&]+)"),
             Regex("[?&]redirect=([^&]+)"),
-            Regex("[?&]url=([^&]+)"),
             Regex("[?&]goto=([^&]+)"),
             Regex("[?&]target=([^&]+)")
         )

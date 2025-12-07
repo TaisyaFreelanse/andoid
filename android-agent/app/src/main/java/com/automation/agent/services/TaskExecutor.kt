@@ -356,7 +356,43 @@ class TaskExecutor(
             // Check for adurl extraction
             if (step.config["extract_adurl"] == true) {
                 val parser = Parser(browser)
-                val adUrls = results.mapNotNull { parser.parseAdUrl(it) }
+                val currentUrl = try { browser.getCurrentUrl() } catch (e: Exception) { "" }
+                val currentDomain = try {
+                    if (currentUrl.isNotEmpty()) {
+                        java.net.URL(currentUrl).host
+                    } else {
+                        ""
+                    }
+                } catch (e: Exception) {
+                    ""
+                }
+                
+                val adUrls = results.mapNotNull { link ->
+                    val adUrl = parser.parseAdUrl(link)
+                    // Filter out adUrls that match the current domain
+                    if (adUrl != null && currentDomain.isNotEmpty()) {
+                        try {
+                            val adDomain = java.net.URL(adUrl).host
+                            if (adDomain == currentDomain || adDomain.contains(currentDomain) || currentDomain.contains(adDomain)) {
+                                Log.d(TAG, "Filtered out adUrl matching current domain: $adUrl (domain: $adDomain)")
+                                null
+                            } else {
+                                adUrl
+                            }
+                        } catch (e: Exception) {
+                            // If URL parsing fails, check if it's the same as current URL
+                            if (adUrl == currentUrl) {
+                                Log.d(TAG, "Filtered out adUrl matching current URL: $adUrl")
+                                null
+                            } else {
+                                adUrl
+                            }
+                        }
+                    } else {
+                        adUrl
+                    }
+                }.filterNotNull()
+                
                 val existingAdUrls = executionResults["ad_urls"] as? MutableList<String> ?: mutableListOf()
                 existingAdUrls.addAll(adUrls)
                 executionResults["ad_urls"] = existingAdUrls

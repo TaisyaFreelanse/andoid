@@ -77,18 +77,20 @@ class WebViewController(
                         @Suppress("DEPRECATION")
                         WindowManager.LayoutParams.TYPE_PHONE
                     },
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                    PixelFormat.TRANSLUCENT
+                    // Removed FLAG_NOT_FOCUSABLE to make it fully interactive and visible
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR,
+                    PixelFormat.OPAQUE // Changed from TRANSLUCENT to OPAQUE for better visibility
                 ).apply {
                     gravity = Gravity.TOP or Gravity.START
                     x = 0
                     y = 0
-                    // Make it small/invisible but still rendered
-                    width = 360
-                    height = 640
-                    alpha = 0.01f // Almost invisible
+                    // Make it fully visible and interactive - full screen
+                    width = WindowManager.LayoutParams.MATCH_PARENT
+                    height = WindowManager.LayoutParams.MATCH_PARENT
+                    alpha = 1.0f // Fully visible
+                    format = PixelFormat.OPAQUE // Ensure solid background
                 }
                 
                 windowManager?.addView(webView, params)

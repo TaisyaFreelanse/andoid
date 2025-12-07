@@ -304,6 +304,18 @@ export async function agentRoutes(fastify: FastifyInstance) {
     try {
       logger.info({ taskId, finalStatus, resultDataKeys: Object.keys(resultData) }, 'Updating task status in database');
       
+      // First check if task exists
+      const existingTask = await prisma.task.findUnique({
+        where: { id: taskId },
+      });
+      
+      if (!existingTask) {
+        logger.error({ taskId, deviceId }, 'Task not found in database when trying to update result');
+        return reply.status(404).send({
+          error: { message: 'Task not found', code: 'TASK_NOT_FOUND' },
+        });
+      }
+      
       const task = await prisma.task.update({
         where: { id: taskId },
         data: {

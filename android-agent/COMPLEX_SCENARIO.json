@@ -15,8 +15,8 @@
     "take_screenshots": true,
     "human_like": true,
     "random_delays": true,
-    "min_delay": 2000,
-    "max_delay": 5000
+    "min_delay": 3000,
+    "max_delay": 8000
   },
   "variables": {
     "search_query": "site:pickuplineinsider.com",
@@ -27,8 +27,9 @@
     {
       "id": "step_0",
       "type": "wait",
-      "duration": 2000,
-      "description": "Начальная задержка"
+      "duration": 3000,
+      "random_offset": 2000,
+      "description": "Начальная задержка (имитация загрузки приложения)"
     },
     {
       "id": "step_1",
@@ -41,22 +42,38 @@
     {
       "id": "step_2",
       "type": "wait",
-      "duration": 5000,
-      "random_offset": 2000,
-      "description": "Ожидание полной загрузки сайта"
+      "duration": 6000,
+      "random_offset": 3000,
+      "description": "Ожидание полной загрузки сайта (имитация чтения)"
     },
     {
       "id": "step_11",
       "type": "scroll",
       "direction": "down",
-      "pixels": 500,
+      "pixels": 300,
       "smooth": true,
-      "description": "Прокрутка страницы для загрузки баннеров"
+      "description": "Медленная прокрутка для загрузки баннеров"
+    },
+    {
+      "id": "step_11b",
+      "type": "wait",
+      "duration": 2500,
+      "random_offset": 1500,
+      "description": "Пауза после прокрутки (имитация чтения)"
+    },
+    {
+      "id": "step_11c",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 300,
+      "smooth": true,
+      "description": "Продолжение прокрутки"
     },
     {
       "id": "step_12",
       "type": "wait",
-      "duration": 3000,
+      "duration": 4000,
+      "random_offset": 2000,
       "description": "Ожидание загрузки рекламы"
     },
     {
@@ -70,6 +87,17 @@
       "description": "Извлечение ВСЕХ iframe (реклама загружается через iframe)"
     },
     {
+      "id": "step_13b",
+      "type": "extract",
+      "selector": "a[href*='adurl']:not([href*='pickuplineinsider.com'])",
+      "attribute": "href",
+      "save_as": "ad_links",
+      "multiple": true,
+      "append": true,
+      "extract_adurl": true,
+      "description": "Извлечение ссылок с параметром adurl (только извлечение, без клика)"
+    },
+    {
       "id": "step_15",
       "type": "loop",
       "max_iterations": 6,
@@ -78,23 +106,39 @@
         {
           "id": "loop_step_1",
           "type": "wait",
-          "duration": 2000,
-          "random_offset": 1000,
-          "description": "Пауза перед переходом"
+          "duration": 3000,
+          "random_offset": 2000,
+          "description": "Пауза перед действием (имитация чтения)"
         },
         {
           "id": "loop_step_2",
           "type": "scroll",
           "direction": "down",
-          "percent": 50,
+          "pixels": 250,
           "smooth": true,
-          "description": "Прокрутка страницы"
+          "description": "Медленная прокрутка страницы"
+        },
+        {
+          "id": "loop_step_2b",
+          "type": "wait",
+          "duration": 2000,
+          "random_offset": 1000,
+          "description": "Пауза после прокрутки"
+        },
+        {
+          "id": "loop_step_2c",
+          "type": "scroll",
+          "direction": "down",
+          "pixels": 250,
+          "smooth": true,
+          "description": "Продолжение прокрутки"
         },
         {
           "id": "loop_step_3",
           "type": "wait",
-          "duration": 2000,
-          "description": "Ожидание после прокрутки"
+          "duration": 3000,
+          "random_offset": 1500,
+          "description": "Ожидание после прокрутки (имитация чтения контента)"
         },
         {
           "id": "loop_step_4",
@@ -107,38 +151,71 @@
           "description": "Сбор ВСЕХ iframe (реклама)"
         },
         {
+          "id": "loop_step_4b",
+          "type": "extract",
+          "selector": "a[href*='adurl']:not([href*='pickuplineinsider.com'])",
+          "attribute": "href",
+          "save_as": "ad_links",
+          "multiple": true,
+          "append": true,
+          "extract_adurl": true,
+          "description": "Сбор ссылок с adurl (только извлечение, без клика)"
+        },
+        {
+          "id": "loop_step_5",
+          "type": "wait",
+          "duration": 2000,
+          "random_offset": 1000,
+          "description": "Пауза перед кликом"
+        },
+        {
           "id": "loop_step_6",
           "type": "click",
-          "selector": "a[href*='pickuplineinsider.com']:not([href*='#']):not([href*='javascript'])",
-          "optional": true,
-          "timeout": 5000,
-          "description": "Клик по случайной внутренней ссылке сайта"
+          "selector": "a[href*='pickuplineinsider.com']:not([href*='#']):not([href*='javascript']):not([href*='mailto']):not([href*='tel']):not([href*='googleads']):not([href*='doubleclick']):not([href*='googlesyndication']):not([href*='adurl']):not([href*='pagead'])",
+          "optional": false,
+          "timeout": 8000,
+          "description": "Клик по внутренней ссылке сайта (исключая рекламные ссылки)"
         },
         {
           "id": "loop_step_7",
           "type": "wait",
-          "duration": 3000,
-          "random_offset": 2000,
-          "description": "Ожидание загрузки новой страницы"
+          "duration": 5000,
+          "random_offset": 3000,
+          "description": "Ожидание загрузки новой страницы (имитация чтения)"
         },
         {
           "id": "loop_step_8",
           "type": "scroll",
           "direction": "down",
-          "pixels": 400,
+          "pixels": 300,
           "smooth": true,
           "description": "Прокрутка новой страницы"
         },
         {
+          "id": "loop_step_8b",
+          "type": "wait",
+          "duration": 2000,
+          "random_offset": 1000,
+          "description": "Пауза после прокрутки"
+        },
+        {
           "id": "loop_step_9",
           "type": "wait",
-          "duration": 3000,
+          "duration": 4000,
+          "random_offset": 2000,
           "description": "Ожидание загрузки баннеров на новой странице"
         }
       ]
     },
     {
       "id": "step_16",
+      "type": "wait",
+      "duration": 3000,
+      "random_offset": 2000,
+      "description": "Финальная пауза"
+    },
+    {
+      "id": "step_17",
       "type": "screenshot",
       "full_page": false,
       "description": "Финальный скриншот"
