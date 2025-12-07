@@ -33,47 +33,17 @@
     {
       "id": "step_1",
       "type": "navigate",
-      "url": "https://www.google.com",
+      "url": "https://www.google.com/search?q=site%3Apickuplineinsider.com",
       "wait_for_load": true,
       "timeout": 30000,
-      "description": "Переход на Google.com"
+      "description": "Переход сразу на страницу результатов поиска Google"
     },
     {
       "id": "step_2",
       "type": "wait",
-      "duration": 3000,
-      "random_offset": 1000,
-      "description": "Ожидание загрузки страницы"
-    },
-    {
-      "id": "step_3",
-      "type": "input",
-      "selector": "input[name='q'], textarea[name='q'], input[type='text'][name='q'], input[aria-label*='Поиск'], input[aria-label*='Search'], input[type='search']",
-      "value": "site:pickuplineinsider.com",
-      "clear_before": true,
-      "submit": true,
-      "description": "Ввод поискового запроса и отправка формы (Enter)"
-    },
-    {
-      "id": "step_4",
-      "type": "wait",
-      "duration": 2000,
-      "description": "Пауза после отправки формы"
-    },
-    {
-      "id": "step_5",
-      "type": "click",
-      "selector": "input[type='submit'][value*='Поиск'], input[type='submit'][value*='Search'], button[type='submit'], input[aria-label*='Поиск'], input[aria-label*='Search'], button[aria-label*='Поиск'], button[aria-label*='Search'], form[action='/search'] button, form[action='/search'] input[type='submit']",
-      "timeout": 5000,
-      "optional": true,
-      "description": "Нажатие кнопки поиска (опционально, если Enter не сработал)"
-    },
-    {
-      "id": "step_6",
-      "type": "wait",
       "duration": 5000,
       "random_offset": 2000,
-      "description": "Ожидание результатов поиска"
+      "description": "Ожидание загрузки результатов поиска"
     },
     {
       "id": "step_7",
