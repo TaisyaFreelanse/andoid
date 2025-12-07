@@ -267,6 +267,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
     }, 'Task result received from Android Agent');
 
     if (!deviceId) {
+      logger.error({ taskId, headers: Object.keys(request.headers) }, 'Missing X-Device-Id header in task result request');
       return reply.status(401).send({
         error: { message: 'Missing device ID', code: 'MISSING_DEVICE_ID' },
       });

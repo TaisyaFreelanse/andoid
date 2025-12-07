@@ -249,23 +249,84 @@ class WebViewController(
     override suspend fun input(selector: String, text: String): Boolean {
         ensureInitialized()
         
-        val escapedText = text.replace("'", "\\'").replace("\n", "\\n")
+        Log.d(TAG, "Input attempt - selector: $selector, text: $text")
         
+        val escapedText = text.replace("'", "\\'").replace("\n", "\\n")
+        val escapedSelector = selector.replace("'", "\\'")
+        
+        // First, check if element exists and get info about it
+        val checkScript = """
+            (function() {
+                var selectors = '$escapedSelector'.split(',').map(s => s.trim());
+                for (var i = 0; i < selectors.length; i++) {
+                    var element = document.querySelector(selectors[i]);
+                    if (element) {
+                        return JSON.stringify({
+                            found: true,
+                            selector: selectors[i],
+                            tagName: element.tagName,
+                            type: element.type || 'none',
+                            id: element.id || 'none',
+                            name: element.name || 'none'
+                        });
+                    }
+                }
+                return JSON.stringify({found: false, tried: selectors.length});
+            })();
+        """.trimIndent()
+        
+        val checkResult = evaluateJavascript(checkScript)
+        Log.d(TAG, "Element check result: $checkResult")
+        
+        // Try multiple input methods
         val script = """
             (function() {
-                var element = document.querySelector('$selector');
+                var selectors = '$escapedSelector'.split(',').map(s => s.trim());
+                var element = null;
+                
+                // Try each selector
+                for (var i = 0; i < selectors.length; i++) {
+                    element = document.querySelector(selectors[i]);
+                    if (element) break;
+                }
+                
+                if (!element) {
+                    // Try finding any search input
+                    element = document.querySelector('input[type="search"]') ||
+                              document.querySelector('input[name="q"]') ||
+                              document.querySelector('textarea[name="q"]') ||
+                              document.querySelector('[role="combobox"]') ||
+                              document.querySelector('input[aria-label*="Search"]') ||
+                              document.querySelector('input[aria-label*="Поиск"]');
+                }
+                
                 if (element) {
+                    // Focus the element first
+                    element.focus();
+                    
+                    // Clear existing value
+                    element.value = '';
+                    
+                    // Set the new value
                     element.value = '$escapedText';
+                    
+                    // Trigger various events to ensure the page reacts
+                    element.dispatchEvent(new Event('focus', { bubbles: true }));
                     element.dispatchEvent(new Event('input', { bubbles: true }));
                     element.dispatchEvent(new Event('change', { bubbles: true }));
-                    return true;
+                    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+                    element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                    
+                    return JSON.stringify({success: true, value: element.value});
                 }
-                return false;
+                return JSON.stringify({success: false, error: 'Element not found'});
             })();
         """.trimIndent()
         
         val result = evaluateJavascript(script)
-        return result?.contains("true") == true
+        Log.d(TAG, "Input result: $result")
+        
+        return result?.contains("\"success\":true") == true || result?.contains("success: true") == true
     }
 
     override suspend fun submit(selector: String?): Boolean {

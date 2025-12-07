@@ -48,23 +48,25 @@
     {
       "id": "step_3",
       "type": "input",
-      "selector": "input[name='q'], textarea[name='q'], input[type='text'][name='q'], input[aria-label*='Поиск'], input[aria-label*='Search']",
+      "selector": "input[name='q'], textarea[name='q'], input[type='text'][name='q'], input[aria-label*='Поиск'], input[aria-label*='Search'], input[type='search']",
       "value": "site:pickuplineinsider.com",
       "clear_before": true,
-      "description": "Ввод поискового запроса"
+      "submit": true,
+      "description": "Ввод поискового запроса и отправка формы (Enter)"
     },
     {
       "id": "step_4",
       "type": "wait",
-      "duration": 1000,
-      "description": "Пауза после ввода"
+      "duration": 2000,
+      "description": "Пауза после отправки формы"
     },
     {
       "id": "step_5",
       "type": "click",
       "selector": "input[type='submit'][value*='Поиск'], input[type='submit'][value*='Search'], button[type='submit'], input[aria-label*='Поиск'], input[aria-label*='Search'], button[aria-label*='Поиск'], button[aria-label*='Search'], form[action='/search'] button, form[action='/search'] input[type='submit']",
       "timeout": 5000,
-      "description": "Нажатие кнопки поиска"
+      "optional": true,
+      "description": "Нажатие кнопки поиска (опционально, если Enter не сработал)"
     },
     {
       "id": "step_6",

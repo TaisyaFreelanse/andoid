@@ -10,6 +10,7 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
@@ -35,6 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class ControllerService : LifecycleService() {
 
     companion object {
+        private const val TAG = "ControllerService"
         private const val CHANNEL_ID = "automation_agent_channel"
         private const val NOTIFICATION_ID = 1001
         private const val PREFS_NAME = "agent_prefs"
@@ -276,8 +278,9 @@ class ControllerService : LifecycleService() {
             deviceId = response.deviceId
             isRegistered.set(true)
             
-            // Set device ID in API client
+            // Set device ID in API client and TaskExecutor
             apiClient.setDeviceId(response.deviceId)
+            taskExecutor.setDeviceId(response.deviceId)
             
             // Set auth token in API client (prefer agentToken, fallback to token)
             val authToken = response.agentToken ?: response.token
@@ -526,7 +529,7 @@ class ControllerService : LifecycleService() {
                 error = if (!success) "Some uniqueness actions failed" else null,
                 executionTime = System.currentTimeMillis()
             )
-            apiClient.sendTaskResult(task.id, request)
+            apiClient.sendTaskResult(task.id, request, deviceId ?: "")
             apiClient.updateTaskStatus(task.id, if (success) "completed" else "failed")
             
             updateNotification("Уникализация завершена: ${if (success) "успешно" else "с ошибками"}")

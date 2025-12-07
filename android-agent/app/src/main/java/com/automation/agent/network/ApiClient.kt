@@ -34,6 +34,11 @@ class ApiClient(
         .setLenient()  // Allow lenient parsing
         .create()
     private var authToken: String? = null
+    private var storedDeviceId: String? = null
+    
+    fun setDeviceId(id: String) {
+        storedDeviceId = id
+    }
 
     init {
         client = buildClient()
@@ -233,20 +238,24 @@ class ApiClient(
     /**
      * Send task result
      */
-    suspend fun sendTaskResult(taskId: String, result: TaskResultRequest): Boolean {
+    suspend fun sendTaskResult(taskId: String, result: TaskResultRequest, deviceId: String): Boolean {
         val json = gson.toJson(result)
         val body = json.toRequestBody("application/json".toMediaType())
+        
+        android.util.Log.d("ApiClient", "Sending task result for taskId: $taskId, deviceId: $deviceId")
         
         val request = Request.Builder()
             .url("$baseUrl/api/agent/tasks/$taskId/result")
             .post(body)
             .addHeader("Content-Type", "application/json")
+            .addHeader("X-Device-Id", deviceId)  // Required for backend to update task status
             .apply {
                 authToken?.let { addHeader("Authorization", "Bearer $it") }
             }
             .build()
 
         return executeRequest(request) { response ->
+            android.util.Log.d("ApiClient", "Task result response: ${response.code} for taskId: $taskId")
             response.isSuccessful
         } ?: false
     }
