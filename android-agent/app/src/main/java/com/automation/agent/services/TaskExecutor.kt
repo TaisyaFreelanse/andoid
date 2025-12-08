@@ -254,6 +254,9 @@ class TaskExecutor(
             ?: return StepResult(success = false, error = "URL not specified")
         
         return try {
+            // Clear intercepted URLs before navigation to start fresh
+            browser.clearInterceptedUrls()
+            
             Log.d(TAG, "Navigating to: $url")
             browser.navigate(url)
             
@@ -442,25 +445,73 @@ class TaskExecutor(
                     emptyList()
                 }
                 
+                Log.d(TAG, "Extracted ${allPageLinks.size} page links for adurl extraction")
+                
                 val pageAdUrls = allPageLinks.mapNotNull { link ->
                     val adUrl = parser.parseAdUrl(link)
                     if (adUrl != null && currentDomain.isNotEmpty()) {
                         try {
                             val adDomain = java.net.URL(adUrl).host
                             if (adDomain != currentDomain && !adDomain.contains(currentDomain) && !currentDomain.contains(adDomain)) {
+                                Log.d(TAG, "Found adUrl from page link: $adUrl (from: $link)")
+                                adUrl
+                            } else {
+                                Log.d(TAG, "Filtered out adUrl from page link (same domain): $adUrl")
+                                null
+                            }
+                        } catch (e: Exception) {
+                            if (adUrl != currentUrl) {
+                                Log.d(TAG, "Found adUrl from page link (parsing error): $adUrl")
                                 adUrl
                             } else {
                                 null
                             }
-                        } catch (e: Exception) {
-                            if (adUrl != currentUrl) adUrl else null
                         }
                     } else {
+                        if (adUrl != null) {
+                            Log.d(TAG, "Found adUrl from page link (no domain check): $adUrl")
+                        }
                         adUrl
                     }
                 }.filterNotNull()
                 
-                val allAdUrls = (adUrls + directAdUrls + pageAdUrls).distinct()
+                // Get intercepted ad URLs from network requests (passive method - no clicks)
+                val interceptedAdUrls = try {
+                    val intercepted = browser.getInterceptedAdUrls()
+                    Log.d(TAG, "Intercepted ${intercepted.size} ad URLs from network requests")
+                    intercepted.filter { url ->
+                        // Filter out URLs matching current domain
+                        if (currentDomain.isNotEmpty()) {
+                            try {
+                                val urlDomain = java.net.URL(url).host
+                                urlDomain != currentDomain && !urlDomain.contains(currentDomain) && !currentDomain.contains(urlDomain)
+                            } catch (e: Exception) {
+                                url != currentUrl
+                            }
+                        } else {
+                            true
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to get intercepted ad URLs: ${e.message}")
+                    emptySet()
+                }
+                
+                Log.d(TAG, "Parsed adUrls: ${adUrls.size}, directAdUrls: ${directAdUrls.size}, pageAdUrls: ${pageAdUrls.size}, interceptedAdUrls: ${interceptedAdUrls.size}")
+                Log.d(TAG, "Results to parse: ${results.size} links")
+                if (results.isNotEmpty()) {
+                    Log.d(TAG, "First few results: ${results.take(3)}")
+                }
+                if (interceptedAdUrls.isNotEmpty()) {
+                    Log.d(TAG, "Sample intercepted adUrls: ${interceptedAdUrls.take(3)}")
+                }
+                
+                val allAdUrls = (adUrls + directAdUrls + pageAdUrls + interceptedAdUrls).distinct()
+                
+                Log.d(TAG, "Total unique adUrls extracted: ${allAdUrls.size}")
+                if (allAdUrls.isNotEmpty()) {
+                    Log.d(TAG, "Sample adUrls: ${allAdUrls.take(3)}")
+                }
                 
                 val existingAdUrls = executionResults["ad_urls"] as? MutableList<String> ?: mutableListOf()
                 existingAdUrls.addAll(allAdUrls)
@@ -890,6 +941,25 @@ class TaskExecutor(
                                 links.push(href.trim());
                             }
                         }
+                        // Try to get previous sibling
+                        var prevSibling = iframe.previousElementSibling;
+                        if (prevSibling && prevSibling.tagName === 'A') {
+                            var href = prevSibling.href || prevSibling.getAttribute('href') || '';
+                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                                links.push(href.trim());
+                            }
+                        }
+                    });
+                    // Try to get links from elements that might wrap iframes
+                    var iframeWrappers = document.querySelectorAll('div:has(iframe[src*="googlesyndication"]), div:has(iframe[src*="doubleclick"])');
+                    iframeWrappers.forEach(function(wrapper) {
+                        var wrapperLinks = wrapper.querySelectorAll('a[href]');
+                        wrapperLinks.forEach(function(a) {
+                            var href = a.href || a.getAttribute('href') || '';
+                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                                links.push(href.trim());
+                            }
+                        });
                     });
                     // Remove duplicates
                     return JSON.stringify([...new Set(links)]);

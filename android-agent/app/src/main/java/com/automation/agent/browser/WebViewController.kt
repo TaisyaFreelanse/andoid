@@ -53,6 +53,10 @@ class WebViewController(
     private var customUserAgent: String? = null
     private var windowManager: WindowManager? = null
     private var isAddedToWindow = false
+    
+    // Network request interception for ad URL extraction
+    private val interceptedUrls = mutableSetOf<String>()
+    private val adRedirectUrls = mutableSetOf<String>()
 
     // ==================== Initialization ====================
 
@@ -177,8 +181,134 @@ class WebViewController(
                 view: WebView?,
                 request: WebResourceRequest?
             ): Boolean {
+                // Intercept all URL navigations to catch ad redirects
+                if (request != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val url = request.url.toString()
+                    
+                    // Check if this navigation is from an ad-related source
+                    val referrer = request.requestHeaders?.get("Referer") ?: ""
+                    val isFromAd = isAdRelatedUrl(referrer) || isAdRelatedUrl(url)
+                    
+                    if (isFromAd) {
+                        Log.d(TAG, "Intercepted navigation from ad: $url (referrer: $referrer)")
+                        
+                        // Check if URL is not the current page domain
+                        val currentDomain = try {
+                            if (currentUrl.isNotEmpty()) {
+                                java.net.URL(currentUrl).host
+                            } else {
+                                ""
+                            }
+                        } catch (e: Exception) {
+                            ""
+                        }
+                        
+                        val urlDomain = try {
+                            java.net.URL(url).host
+                        } catch (e: Exception) {
+                            ""
+                        }
+                        
+                        // If URL is different from current domain and not an ad network URL, it's likely a final ad URL
+                        if (urlDomain.isNotEmpty() && 
+                            currentDomain.isNotEmpty() && 
+                            urlDomain != currentDomain && 
+                            !urlDomain.contains("googleads") && 
+                            !urlDomain.contains("doubleclick") && 
+                            !urlDomain.contains("googlesyndication") &&
+                            !urlDomain.contains("pagead") &&
+                            !urlDomain.contains("adservice")) {
+                            Log.d(TAG, "Found potential ad URL from navigation: $url")
+                            adRedirectUrls.add(url)
+                        }
+                        
+                        // Also extract from query parameters
+                        extractAdUrlFromRequest(url)
+                    }
+                }
+                
                 // Allow all URLs to load in WebView
                 return false
+            }
+            
+            // Intercept network requests to extract ad URLs from redirects
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                if (request != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val url = request.url.toString()
+                    
+                    // Track all intercepted URLs
+                    interceptedUrls.add(url)
+                    
+                    // Check if this is an ad-related request
+                    if (isAdRelatedUrl(url)) {
+                        Log.d(TAG, "Intercepted ad-related request: $url")
+                        
+                        // Check for redirect URLs in query parameters
+                        extractAdUrlFromRequest(url)
+                    }
+                    
+                    // Also check ALL requests for adurl parameters (not just ad-related URLs)
+                    // This catches cases where ad URLs are passed as parameters in any request
+                    extractAdUrlFromRequest(url)
+                }
+                
+                // Return null to use default handling (don't block the request)
+                return null
+            }
+            
+            // Handle HTTP redirects (3xx status codes)
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?
+            ) {
+                super.onReceivedHttpError(view, request, errorResponse)
+                
+                if (request != null && errorResponse != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val statusCode = errorResponse.statusCode
+                    val url = request.url.toString()
+                    
+                    // Check for redirect status codes (3xx)
+                    if (statusCode in 300..399) {
+                        val location = errorResponse.responseHeaders?.get("Location")
+                        if (location != null) {
+                            Log.d(TAG, "Intercepted HTTP redirect: $url -> $location")
+                            
+                            // Check if redirect is from ad-related source or goes to non-ad-network domain
+                            val isFromAd = isAdRelatedUrl(url)
+                            val currentDomain = try {
+                                if (currentUrl.isNotEmpty()) {
+                                    java.net.URL(currentUrl).host
+                                } else {
+                                    ""
+                                }
+                            } catch (e: Exception) {
+                                ""
+                            }
+                            
+                            val locationDomain = try {
+                                java.net.URL(location).host
+                            } catch (e: Exception) {
+                                ""
+                            }
+                            
+                            // If redirect is from ad network and goes to a different domain, it's likely a final ad URL
+                            if (isFromAd && locationDomain.isNotEmpty() && 
+                                locationDomain != currentDomain &&
+                                !locationDomain.contains("googleads") && 
+                                !locationDomain.contains("doubleclick") && 
+                                !locationDomain.contains("googlesyndication") &&
+                                !locationDomain.contains("pagead") &&
+                                !locationDomain.contains("adservice")) {
+                                Log.d(TAG, "Found ad URL from HTTP redirect: $location")
+                                adRedirectUrls.add(location)
+                            }
+                        }
+                    }
+                }
             }
         }
         
@@ -210,11 +340,95 @@ class WebViewController(
         customUserAgent = userAgent
         webView?.settings?.userAgentString = userAgent
     }
+    
+    /**
+     * Check if URL is ad-related
+     */
+    private fun isAdRelatedUrl(url: String): Boolean {
+        return url.contains("googleads", ignoreCase = true) ||
+               url.contains("doubleclick", ignoreCase = true) ||
+               url.contains("googlesyndication", ignoreCase = true) ||
+               url.contains("adservice", ignoreCase = true) ||
+               url.contains("pagead", ignoreCase = true) ||
+               url.contains("adurl", ignoreCase = true) ||
+               url.contains("ad_url", ignoreCase = true) ||
+               url.contains("adclick", ignoreCase = true)
+    }
+    
+    /**
+     * Extract ad URL from request URL (check query parameters)
+     */
+    private fun extractAdUrlFromRequest(url: String) {
+        try {
+            val uri = android.net.Uri.parse(url)
+            
+            // Check for common ad URL parameters
+            val adUrlParams = listOf("adurl", "ad_url", "dest_url", "redirect", "goto", "target", "url")
+            for (param in adUrlParams) {
+                val value = uri.getQueryParameter(param)
+                if (value != null && value.isNotEmpty()) {
+                    val decodedUrl = java.net.URLDecoder.decode(value, "UTF-8")
+                    if (decodedUrl.startsWith("http")) {
+                        // Filter out URLs matching current domain
+                        val currentDomain = try {
+                            if (currentUrl.isNotEmpty()) {
+                                java.net.URL(currentUrl).host
+                            } else {
+                                ""
+                            }
+                        } catch (e: Exception) {
+                            ""
+                        }
+                        
+                        val decodedDomain = try {
+                            java.net.URL(decodedUrl).host
+                        } catch (e: Exception) {
+                            ""
+                        }
+                        
+                        // Only add if it's a different domain and not an ad network domain
+                        if (decodedDomain.isNotEmpty() && 
+                            (currentDomain.isEmpty() || decodedDomain != currentDomain) &&
+                            !decodedDomain.contains("pickuplineinsider.com") &&
+                            !decodedDomain.contains("googleads") && 
+                            !decodedDomain.contains("doubleclick") && 
+                            !decodedDomain.contains("googlesyndication") &&
+                            !decodedDomain.contains("pagead") &&
+                            !decodedDomain.contains("adservice")) {
+                            Log.d(TAG, "Extracted ad URL from request: $decodedUrl (param: $param)")
+                            adRedirectUrls.add(decodedUrl)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract ad URL from request: ${e.message}")
+        }
+    }
+    
+    /**
+     * Get intercepted ad redirect URLs
+     */
+    override suspend fun getInterceptedAdUrls(): Set<String> {
+        Log.d(TAG, "Returning ${adRedirectUrls.size} intercepted ad URLs: ${adRedirectUrls.take(5)}")
+        return adRedirectUrls.toSet()
+    }
+    
+    /**
+     * Clear intercepted URLs (call before new page load)
+     */
+    override suspend fun clearInterceptedUrls() {
+        interceptedUrls.clear()
+        adRedirectUrls.clear()
+    }
 
     // ==================== Navigation ====================
 
     override suspend fun navigate(url: String) {
         ensureInitialized()
+        
+        // Clear intercepted URLs before navigation
+        clearInterceptedUrls()
         
         withContext(Dispatchers.Main) {
             Log.d(TAG, "Navigating to: $url")

@@ -168,4 +168,17 @@ interface BrowserController {
      * Check if browser is initialized
      */
     fun isInitialized(): Boolean
+    
+    // ==================== Network Interception ====================
+    
+    /**
+     * Get intercepted ad URLs from network requests (redirects, query parameters)
+     * This is a passive method - no clicks required, just monitoring network traffic
+     */
+    suspend fun getInterceptedAdUrls(): Set<String>
+    
+    /**
+     * Clear intercepted URLs (call before new page load)
+     */
+    suspend fun clearInterceptedUrls()
 }

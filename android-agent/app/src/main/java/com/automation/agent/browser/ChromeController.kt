@@ -554,4 +554,22 @@ class ChromeController(
             node.isScrollable
         }
     }
+    
+    // ==================== Network Interception ====================
+    
+    /**
+     * Get intercepted ad URLs from network requests
+     * ChromeController doesn't support network interception (external browser)
+     */
+    override suspend fun getInterceptedAdUrls(): Set<String> {
+        // ChromeController uses external browser, can't intercept network requests
+        return emptySet()
+    }
+    
+    /**
+     * Clear intercepted URLs
+     */
+    override suspend fun clearInterceptedUrls() {
+        // No-op for ChromeController
+    }
 }
