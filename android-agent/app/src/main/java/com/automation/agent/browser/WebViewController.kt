@@ -181,21 +181,36 @@ class WebViewController(
                 view: WebView?,
                 request: WebResourceRequest?
             ): Boolean {
-                // Intercept all URL navigations to catch ad redirects
+                // Intercept ALL URL navigations to catch ad redirects (not just ad-related)
                 if (request != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     val url = request.url.toString()
+                    val previousUrl = currentUrl
+                    // Update currentUrl AFTER we've saved the previous value
+                    currentUrl = url
+                    
+                    Log.d(TAG, "Navigation intercepted: $url (previous: $previousUrl)")
+                    
+                    // For ALL navigations (not just ad-related), check for ad URL parameters FIRST
+                    // This catches cases where ad URLs are passed as parameters in any navigation
+                    extractAdUrlFromRequest(url)
                     
                     // Check if this navigation is from an ad-related source
                     val referrer = request.requestHeaders?.get("Referer") ?: ""
                     val isFromAd = isAdRelatedUrl(referrer) || isAdRelatedUrl(url)
                     
-                    if (isFromAd) {
+                    // Also check if URL contains ad-related parameters
+                    val hasAdParams = url.contains("adurl=", ignoreCase = true) || 
+                                     url.contains("ad_url=", ignoreCase = true) ||
+                                     url.contains("dest_url=", ignoreCase = true) ||
+                                     url.contains("redirect=", ignoreCase = true)
+                    
+                    if (isFromAd || hasAdParams) {
                         Log.d(TAG, "Intercepted navigation from ad: $url (referrer: $referrer)")
                         
-                        // Check if URL is not the current page domain
+                        // Check if URL is not the current page domain (use previousUrl for comparison)
                         val currentDomain = try {
-                            if (currentUrl.isNotEmpty()) {
-                                java.net.URL(currentUrl).host
+                            if (previousUrl.isNotEmpty()) {
+                                java.net.URL(previousUrl).host
                             } else {
                                 ""
                             }
@@ -217,13 +232,54 @@ class WebViewController(
                             !urlDomain.contains("doubleclick") && 
                             !urlDomain.contains("googlesyndication") &&
                             !urlDomain.contains("pagead") &&
-                            !urlDomain.contains("adservice")) {
+                            !urlDomain.contains("adservice") &&
+                            !urlDomain.contains("pickuplineinsider.com")) {
                             Log.d(TAG, "Found potential ad URL from navigation: $url")
                             adRedirectUrls.add(url)
                         }
                         
                         // Also extract from query parameters
                         extractAdUrlFromRequest(url)
+                    } else {
+                        // Even for non-ad navigations, check if URL might be an ad destination
+                        // (e.g., if it's a different domain from the current page)
+                        val currentDomain = try {
+                            if (previousUrl.isNotEmpty()) {
+                                java.net.URL(previousUrl).host
+                            } else {
+                                ""
+                            }
+                        } catch (e: Exception) {
+                            ""
+                        }
+                        
+                        val urlDomain = try {
+                            java.net.URL(url).host
+                        } catch (e: Exception) {
+                            ""
+                        }
+                        
+                        // If navigation goes to a different domain (and not ad network), it might be an ad
+                        // But be more conservative here - only if it's clearly not the same site
+                        if (urlDomain.isNotEmpty() && 
+                            currentDomain.isNotEmpty() && 
+                            urlDomain != currentDomain && 
+                            !urlDomain.contains(currentDomain) &&
+                            !currentDomain.contains(urlDomain) &&
+                            !urlDomain.contains("googleads") && 
+                            !urlDomain.contains("doubleclick") && 
+                            !urlDomain.contains("googlesyndication") &&
+                            !urlDomain.contains("pagead") &&
+                            !urlDomain.contains("adservice") &&
+                            !urlDomain.contains("pickuplineinsider.com") &&
+                            !urlDomain.contains("google.com") &&
+                            !urlDomain.contains("facebook.com") &&
+                            !urlDomain.contains("twitter.com") &&
+                            !urlDomain.contains("linkedin.com") &&
+                            !urlDomain.contains("youtube.com")) {
+                            Log.d(TAG, "Found potential ad URL from cross-domain navigation: $url")
+                            adRedirectUrls.add(url)
+                        }
                     }
                 }
                 
@@ -410,7 +466,11 @@ class WebViewController(
      * Get intercepted ad redirect URLs
      */
     override suspend fun getInterceptedAdUrls(): Set<String> {
-        Log.d(TAG, "Returning ${adRedirectUrls.size} intercepted ad URLs: ${adRedirectUrls.take(5)}")
+        // Combine network interception with JavaScript monitoring
+        val monitoredUrls = getMonitoredAdUrls()
+        adRedirectUrls.addAll(monitoredUrls)
+        
+        Log.d(TAG, "Returning ${adRedirectUrls.size} intercepted ad URLs (${monitoredUrls.size} from JS monitoring): ${adRedirectUrls.take(5)}")
         return adRedirectUrls.toSet()
     }
     
@@ -438,6 +498,208 @@ class WebViewController(
         
         // Wait for page to start loading
         delay(500)
+        
+        // Inject JavaScript to monitor all navigations and redirects
+        injectNavigationMonitor()
+    }
+    
+    /**
+     * Inject JavaScript to passively monitor all navigations and redirects
+     * This helps extract final ad URLs from Google AdSense iframe without clicking
+     */
+    private suspend fun injectNavigationMonitor() {
+        delay(1000) // Wait for page to load
+        
+        val script = """
+            (function() {
+                if (window.__adNavigationMonitor) return; // Already injected
+                window.__adNavigationMonitor = true;
+                window.__monitoredAdUrls = window.__monitoredAdUrls || [];
+                
+                // Function to check if URL is an ad destination (not ad network domain)
+                function isAdDestinationUrl(url) {
+                    if (!url || !url.startsWith('http')) return false;
+                    try {
+                        var host = new URL(url).host;
+                        // Exclude ad network domains
+                        var adNetworks = ['googleads', 'doubleclick', 'googlesyndication', 'pagead', 'adservice', 'googleadservices'];
+                        for (var i = 0; i < adNetworks.length; i++) {
+                            if (host.includes(adNetworks[i])) return false;
+                        }
+                        // Exclude current page domain
+                        var currentHost = window.location.host;
+                        if (host === currentHost || host.includes(currentHost)) return false;
+                        return true;
+                    } catch(e) {
+                        return false;
+                    }
+                }
+                
+                // Function to add URL to monitored list
+                function addMonitoredUrl(url) {
+                    if (isAdDestinationUrl(url)) {
+                        if (window.__monitoredAdUrls.indexOf(url) === -1) {
+                            window.__monitoredAdUrls.push(url);
+                            console.log('[AdMonitor] Found ad URL: ' + url);
+                        }
+                    }
+                }
+                
+                // 1. Monitor all link clicks (including in iframes)
+                document.addEventListener('click', function(e) {
+                    var target = e.target;
+                    while (target && target.tagName !== 'A') {
+                        target = target.parentElement;
+                    }
+                    if (target && target.href) {
+                        addMonitoredUrl(target.href);
+                    }
+                }, true); // Use capture phase to catch all clicks
+                
+                // 2. Monitor iframe src changes
+                var observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (node.tagName === 'IFRAME' && node.src) {
+                                addMonitoredUrl(node.src);
+                            }
+                            // Also check for iframes in added nodes
+                            if (node.querySelectorAll) {
+                                var iframes = node.querySelectorAll('iframe[src]');
+                                iframes.forEach(function(iframe) {
+                                    addMonitoredUrl(iframe.src);
+                                });
+                            }
+                        });
+                    });
+                });
+                observer.observe(document.body || document.documentElement, {
+                    childList: true,
+                    subtree: true
+                });
+                
+                // 3. Monitor window.location changes (redirects)
+                var originalPushState = history.pushState;
+                history.pushState = function() {
+                    originalPushState.apply(history, arguments);
+                    addMonitoredUrl(window.location.href);
+                };
+                
+                var originalReplaceState = history.replaceState;
+                history.replaceState = function() {
+                    originalReplaceState.apply(history, arguments);
+                    addMonitoredUrl(window.location.href);
+                };
+                
+                // 4. Monitor all iframes for navigation changes
+                function monitorIframes() {
+                    var iframes = document.querySelectorAll('iframe');
+                    iframes.forEach(function(iframe) {
+                        try {
+                            // Try to access iframe content (may fail due to same-origin)
+                            var iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                            if (iframeDoc) {
+                                // Monitor clicks inside iframe
+                                iframeDoc.addEventListener('click', function(e) {
+                                    var target = e.target;
+                                    while (target && target.tagName !== 'A') {
+                                        target = target.parentElement;
+                                    }
+                                    if (target && target.href) {
+                                        addMonitoredUrl(target.href);
+                                    }
+                                }, true);
+                                
+                                // Monitor iframe location changes
+                                try {
+                                    var iframeLocation = iframe.contentWindow.location;
+                                    Object.defineProperty(iframe.contentWindow, 'location', {
+                                        get: function() {
+                                            return iframeLocation;
+                                        },
+                                        set: function(url) {
+                                            addMonitoredUrl(url);
+                                            iframeLocation.href = url;
+                                        }
+                                    });
+                                } catch(e) {}
+                            }
+                        } catch(e) {
+                            // Same-origin policy - can't access iframe content
+                            // But we can still monitor the iframe src attribute
+                            if (iframe.src) {
+                                addMonitoredUrl(iframe.src);
+                            }
+                        }
+                    });
+                }
+                
+                // Monitor iframes periodically
+                setInterval(monitorIframes, 2000);
+                monitorIframes();
+                
+                // 5. Extract URLs from Google AdSense global variables
+                function extractFromGoogleAds() {
+                    try {
+                        // Check for Google AdSense global variables
+                        if (window.google_ads_iframe_onload) {
+                            for (var key in window) {
+                                try {
+                                    var value = window[key];
+                                    if (typeof value === 'string' && isAdDestinationUrl(value)) {
+                                        addMonitoredUrl(value);
+                                    } else if (typeof value === 'object' && value !== null) {
+                                        var jsonStr = JSON.stringify(value);
+                                        var urlRegex = /https?:\/\/[^\s"']+/g;
+                                        var matches = jsonStr.match(urlRegex);
+                                        if (matches) {
+                                            matches.forEach(function(url) {
+                                                addMonitoredUrl(url);
+                                            });
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    } catch(e) {}
+                }
+                
+                // Extract periodically
+                setInterval(extractFromGoogleAds, 3000);
+                extractFromGoogleAds();
+                
+                console.log('[AdMonitor] Navigation monitor injected');
+            })();
+        """.trimIndent()
+        
+        evaluateJavascript(script)
+    }
+    
+    /**
+     * Get monitored ad URLs from JavaScript
+     */
+    private suspend fun getMonitoredAdUrls(): List<String> {
+        val script = """
+            (function() {
+                return JSON.stringify(window.__monitoredAdUrls || []);
+            })();
+        """.trimIndent()
+        
+        val result = evaluateJavascript(script) ?: "[]"
+        return try {
+            val jsonArray = org.json.JSONArray(result)
+            val urls = mutableListOf<String>()
+            for (i in 0 until jsonArray.length()) {
+                val url = jsonArray.getString(i)
+                if (url.isNotEmpty()) {
+                    urls.add(url)
+                }
+            }
+            urls
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse monitored ad URLs: ${e.message}")
+            emptyList()
+        }
     }
 
     override suspend fun goBack() {

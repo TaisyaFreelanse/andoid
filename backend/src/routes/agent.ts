@@ -255,12 +255,21 @@ export async function agentRoutes(fastify: FastifyInstance) {
     const body = request.body as { status?: string; success?: boolean; result?: any; data?: any; error?: string; executionTime?: number; screenshots?: string[] };
 
     // Log incoming data for debugging
+    const dataKeys = body.data ? Object.keys(body.data) : [];
+    const adUrls = body.data?.ad_urls;
+    const adLinks = body.data?.ad_links;
+    const adDomains = body.data?.ad_domains;
+    
     logger.info({ 
       taskId, 
       bodyKeys: Object.keys(body),
       hasData: !!body.data,
       hasResult: !!body.result,
-      dataKeys: body.data ? Object.keys(body.data) : [],
+      dataKeys: dataKeys,
+      adUrlsCount: Array.isArray(adUrls) ? adUrls.length : (adUrls ? 1 : 0),
+      adLinksCount: Array.isArray(adLinks) ? adLinks.length : (adLinks ? 1 : 0),
+      adDomainsCount: Array.isArray(adDomains) ? adDomains.length : (adDomains ? 1 : 0),
+      adUrlsSample: Array.isArray(adUrls) ? adUrls.slice(0, 3) : (adUrls ? [adUrls] : []),
       success: body.success,
       error: body.error,
       errorMessage: body.error || (body.data?.error ? body.data.error : null)
@@ -295,7 +304,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
     // Get the result data
     const resultData = body.result || body.data || {};
-    
+
     // Include error in result data if present
     if (body.error) {
       resultData.error = body.error;
@@ -325,11 +334,22 @@ export async function agentRoutes(fastify: FastifyInstance) {
         },
       });
       
+      // Log what was saved in resultJson
+      const savedResultJson = task.resultJson as any;
+      const savedAdUrls = savedResultJson?.ad_urls;
+      const savedAdLinks = savedResultJson?.ad_links;
+      const savedAdDomains = savedResultJson?.ad_domains;
+      
       logger.info({ 
         taskId, 
         updatedStatus: task.status, 
         taskName: task.name,
-        hasCompletedAt: !!task.completedAt 
+        hasCompletedAt: !!task.completedAt,
+        savedAdUrlsCount: Array.isArray(savedAdUrls) ? savedAdUrls.length : (savedAdUrls ? 1 : 0),
+        savedAdLinksCount: Array.isArray(savedAdLinks) ? savedAdLinks.length : (savedAdLinks ? 1 : 0),
+        savedAdDomainsCount: Array.isArray(savedAdDomains) ? savedAdDomains.length : (savedAdDomains ? 1 : 0),
+        savedAdUrlsSample: Array.isArray(savedAdUrls) ? savedAdUrls.slice(0, 3) : (savedAdUrls ? [savedAdUrls] : []),
+        savedResultJsonKeys: savedResultJson ? Object.keys(savedResultJson) : []
       }, 'Task status updated successfully');
 
       // Auto-save to parsed data ONLY for parsing tasks

@@ -1,0 +1,129 @@
+{
+  "id": "simple-ad-url-parsing",
+  "name": "Простой сценарий: Извлечение ad_urls",
+  "description": "Упрощенный сценарий для извлечения ad_urls с сайта pickuplineinsider.com",
+  "version": "1.0",
+  "type": "parsing",
+  "browser": "webview",
+  "proxy": "auto",
+  "timeout": 120000,
+  "retries": 1,
+  "config": {
+    "wait_for_ads": true,
+    "scroll_before_extract": true,
+    "take_screenshots": false,
+    "human_like": true,
+    "random_delays": true,
+    "min_delay": 2000,
+    "max_delay": 5000
+  },
+  "steps": [
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "https://www.pickuplineinsider.com/",
+      "wait_for_load": true,
+      "timeout": 30000,
+      "description": "Переход на сайт"
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 8000,
+      "random_offset": 3000,
+      "description": "Ожидание загрузки рекламы"
+    },
+    {
+      "id": "step_3",
+      "type": "scroll",
+      "pixels": 500,
+      "smooth": true,
+      "direction": "down",
+      "description": "Прокрутка для загрузки рекламы"
+    },
+    {
+      "id": "step_4",
+      "type": "wait",
+      "duration": 5000,
+      "random_offset": 2000,
+      "description": "Ожидание после прокрутки"
+    },
+    {
+      "id": "step_5",
+      "type": "scroll",
+      "pixels": 500,
+      "smooth": true,
+      "direction": "down",
+      "description": "Дополнительная прокрутка"
+    },
+    {
+      "id": "step_6",
+      "type": "wait",
+      "duration": 5000,
+      "random_offset": 2000,
+      "description": "Ожидание загрузки рекламы"
+    },
+    {
+      "id": "step_7",
+      "type": "extract",
+      "append": false,
+      "save_as": "ad_links",
+      "multiple": true,
+      "selector": "iframe[src*='googlesyndication'], iframe[src*='doubleclick'], iframe[src*='pagead'], iframe[src*='googleads']",
+      "attribute": "src",
+      "description": "Извлечение iframe с рекламой",
+      "extract_adurl": true
+    },
+    {
+      "id": "step_8",
+      "type": "extract",
+      "append": true,
+      "save_as": "ad_links",
+      "multiple": true,
+      "selector": "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], a[href*='googlesyndication'], a[href*='pagead'], a[href*='adservice']",
+      "attribute": "href",
+      "description": "Извлечение ссылок с adurl",
+      "extract_adurl": true
+    },
+    {
+      "id": "step_9",
+      "type": "extract",
+      "append": true,
+      "save_as": "ad_links",
+      "multiple": true,
+      "selector": "[data-ad-url], [data-adurl], [data-dest-url], [data-redirect], [data-click-url], [data-url], [data-href]",
+      "attribute": "data-ad-url,data-adurl,data-dest-url,data-redirect,data-click-url,data-url,data-href",
+      "description": "Извлечение из data-атрибутов",
+      "extract_adurl": true
+    },
+    {
+      "id": "step_10",
+      "type": "extract",
+      "append": true,
+      "save_as": "ad_links",
+      "multiple": true,
+      "selector": "ins.adsbygoogle, [data-ad-slot], .ad, .ads, .advertisement, [class*='ad-'], [id*='ad-']",
+      "attribute": "data-ad-url,data-adurl,data-dest-url,onclick",
+      "description": "Извлечение из контейнеров рекламы",
+      "extract_adurl": true
+    },
+    {
+      "id": "step_11",
+      "type": "wait",
+      "duration": 3000,
+      "description": "Финальная пауза для завершения сетевых запросов"
+    }
+  ],
+  "output": {
+    "format": "json",
+    "include_metadata": true,
+    "include_screenshots": false
+  },
+  "post_process": {
+    "export_format": "json",
+    "extract_adurl": true,
+    "save_to_backend": true,
+    "deduplicate_domains": true
+  }
+}
+

@@ -447,31 +447,49 @@ class TaskExecutor(
                 
                 Log.d(TAG, "Extracted ${allPageLinks.size} page links for adurl extraction")
                 
+                // Log all found links before parsing
+                if (allPageLinks.isNotEmpty()) {
+                    Log.d(TAG, "=== ALL PAGE LINKS FOUND (${allPageLinks.size}) ===")
+                    allPageLinks.take(20).forEachIndexed { index, link ->
+                        Log.d(TAG, "  [$index] $link")
+                    }
+                    if (allPageLinks.size > 20) {
+                        Log.d(TAG, "  ... and ${allPageLinks.size - 20} more")
+                    }
+                }
+                
                 val pageAdUrls = allPageLinks.mapNotNull { link ->
                     val adUrl = parser.parseAdUrl(link)
-                    if (adUrl != null && currentDomain.isNotEmpty()) {
-                        try {
-                            val adDomain = java.net.URL(adUrl).host
-                            if (adDomain != currentDomain && !adDomain.contains(currentDomain) && !currentDomain.contains(adDomain)) {
-                                Log.d(TAG, "Found adUrl from page link: $adUrl (from: $link)")
-                                adUrl
-                            } else {
-                                Log.d(TAG, "Filtered out adUrl from page link (same domain): $adUrl")
-                                null
+                    if (adUrl != null) {
+                        if (currentDomain.isNotEmpty()) {
+                            try {
+                                val adDomain = java.net.URL(adUrl).host
+                                if (adDomain != currentDomain && !adDomain.contains(currentDomain) && !currentDomain.contains(adDomain)) {
+                                    Log.d(TAG, "✓ Found adUrl from page link: $adUrl (from: $link)")
+                                    adUrl
+                                } else {
+                                    Log.d(TAG, "✗ Filtered out adUrl (same domain): $adUrl (domain: $adDomain, current: $currentDomain)")
+                                    null
+                                }
+                            } catch (e: Exception) {
+                                if (adUrl != currentUrl) {
+                                    Log.d(TAG, "✓ Found adUrl from page link (parsing error): $adUrl (from: $link)")
+                                    adUrl
+                                } else {
+                                    Log.d(TAG, "✗ Filtered out adUrl (same as current URL): $adUrl")
+                                    null
+                                }
                             }
-                        } catch (e: Exception) {
-                            if (adUrl != currentUrl) {
-                                Log.d(TAG, "Found adUrl from page link (parsing error): $adUrl")
-                                adUrl
-                            } else {
-                                null
-                            }
+                        } else {
+                            Log.d(TAG, "✓ Found adUrl from page link (no domain check): $adUrl (from: $link)")
+                            adUrl
                         }
                     } else {
-                        if (adUrl != null) {
-                            Log.d(TAG, "Found adUrl from page link (no domain check): $adUrl")
+                        // Log links that don't parse to adUrl but might be relevant
+                        if (link.contains("adurl") || link.contains("googleads") || link.contains("doubleclick")) {
+                            Log.d(TAG, "? Link contains ad keywords but didn't parse to adUrl: $link")
                         }
-                        adUrl
+                        null
                     }
                 }.filterNotNull()
                 
@@ -497,7 +515,16 @@ class TaskExecutor(
                     emptySet()
                 }
                 
-                Log.d(TAG, "Parsed adUrls: ${adUrls.size}, directAdUrls: ${directAdUrls.size}, pageAdUrls: ${pageAdUrls.size}, interceptedAdUrls: ${interceptedAdUrls.size}")
+                // Try to extract links from iframe content (may fail due to same-origin policy, but worth trying)
+                val iframeAdUrls = try {
+                    extractLinksFromIframes(browser, currentDomain)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to extract links from iframes: ${e.message}")
+                    emptyList()
+                }
+                Log.d(TAG, "Extracted ${iframeAdUrls.size} ad URLs from iframe content")
+                
+                Log.d(TAG, "Parsed adUrls: ${adUrls.size}, directAdUrls: ${directAdUrls.size}, pageAdUrls: ${pageAdUrls.size}, interceptedAdUrls: ${interceptedAdUrls.size}, iframeAdUrls: ${iframeAdUrls.size}")
                 Log.d(TAG, "Results to parse: ${results.size} links")
                 if (results.isNotEmpty()) {
                     Log.d(TAG, "First few results: ${results.take(3)}")
@@ -505,12 +532,26 @@ class TaskExecutor(
                 if (interceptedAdUrls.isNotEmpty()) {
                     Log.d(TAG, "Sample intercepted adUrls: ${interceptedAdUrls.take(3)}")
                 }
+                if (pageAdUrls.isNotEmpty()) {
+                    Log.d(TAG, "Sample pageAdUrls: ${pageAdUrls.take(3)}")
+                }
+                if (iframeAdUrls.isNotEmpty()) {
+                    Log.d(TAG, "Sample iframeAdUrls: ${iframeAdUrls.take(3)}")
+                }
                 
-                val allAdUrls = (adUrls + directAdUrls + pageAdUrls + interceptedAdUrls).distinct()
+                val allAdUrls = (adUrls + directAdUrls + pageAdUrls + interceptedAdUrls + iframeAdUrls).distinct()
                 
-                Log.d(TAG, "Total unique adUrls extracted: ${allAdUrls.size}")
+                Log.i(TAG, "=== AD URL EXTRACTION SUMMARY ===")
+                Log.i(TAG, "Total unique adUrls extracted: ${allAdUrls.size}")
+                Log.i(TAG, "Breakdown: parsed=${adUrls.size}, direct=${directAdUrls.size}, page=${pageAdUrls.size}, intercepted=${interceptedAdUrls.size}, iframe=${iframeAdUrls.size}")
                 if (allAdUrls.isNotEmpty()) {
-                    Log.d(TAG, "Sample adUrls: ${allAdUrls.take(3)}")
+                    Log.i(TAG, "Sample adUrls: ${allAdUrls.take(5)}")
+                } else {
+                    Log.w(TAG, "WARNING: No ad URLs extracted! This might indicate:")
+                    Log.w(TAG, "  1. Ad URLs are not in DOM (they're generated dynamically on click)")
+                    Log.w(TAG, "  2. Ad URLs are inside iframe with different origin (same-origin policy)")
+                    Log.w(TAG, "  3. Ad URLs are in JavaScript event handlers that we haven't extracted yet")
+                    Log.w(TAG, "  4. Need to wait longer for ads to load")
                 }
                 
                 val existingAdUrls = executionResults["ad_urls"] as? MutableList<String> ?: mutableListOf()
@@ -794,21 +835,35 @@ class TaskExecutor(
         selector: String, 
         attribute: String?
     ): List<String> {
+        // Handle multiple attributes (comma-separated)
+        val attributes = attribute?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: listOf(null)
+        
+        // If multiple attributes, extract from all of them
+        if (attributes.size > 1) {
+            val allResults = mutableListOf<String>()
+            for (attr in attributes) {
+                val results = extractViaJavaScript(browser, selector, attr)
+                allResults.addAll(results)
+            }
+            return allResults.distinct()
+        }
+        
+        val singleAttribute = attributes.firstOrNull()
         val attrScript = when {
-            attribute == null || attribute == "text" || attribute == "textContent" -> 
+            singleAttribute == null || singleAttribute == "text" || singleAttribute == "textContent" -> 
                 "el.textContent || el.innerText || ''"
-            attribute == "html" || attribute == "innerHTML" -> 
+            singleAttribute == "html" || singleAttribute == "innerHTML" -> 
                 "el.innerHTML || ''"
-            attribute == "outerHtml" -> 
+            singleAttribute == "outerHtml" -> 
                 "el.outerHTML || ''"
-            attribute == "href" -> 
+            singleAttribute == "href" -> 
                 "el.href || el.getAttribute('href') || ''"
             else -> 
-                "el.getAttribute('$attribute') || ''"
+                "el.getAttribute('$singleAttribute') || ''"
         }
         
         // Special handling for href attribute - try multiple ways to get the link
-        val hrefScript = if (attribute == "href") {
+        val hrefScript = if (singleAttribute == "href") {
             """
             (function() {
                 try {
@@ -863,11 +918,11 @@ class TaskExecutor(
         val result = browser.evaluateJavascript(hrefScript)
         Log.d(TAG, "JavaScript extraction result: ${result?.take(200)}")
         
-        return try {
+        val extracted = try {
             if (result.isNullOrEmpty() || result == "null" || result == "[]") {
                 emptyList()
             } else {
-                // Parse JSON array
+                // Use proper JSON parsing
                 val cleanResult = result.trim()
                     .removePrefix("\"")
                     .removeSuffix("\"")
@@ -875,12 +930,25 @@ class TaskExecutor(
                     .replace("\\n", "\n")
                 
                 if (cleanResult.startsWith("[") && cleanResult.endsWith("]")) {
-                    // Simple JSON array parsing
-                    cleanResult
-                        .removeSurrounding("[", "]")
-                        .split("\",\"")
-                        .map { it.trim().removePrefix("\"").removeSuffix("\"") }
-                        .filter { it.isNotEmpty() }
+                    // Use JSONArray for proper parsing
+                    try {
+                        val jsonArray = org.json.JSONArray(cleanResult)
+                        val results = mutableListOf<String>()
+                        for (i in 0 until jsonArray.length()) {
+                            val value = jsonArray.getString(i)
+                            if (value.isNotEmpty()) {
+                                results.add(value)
+                            }
+                        }
+                        results
+                    } catch (e: Exception) {
+                        // Fallback to simple parsing
+                        cleanResult
+                            .removeSurrounding("[", "]")
+                            .split(",")
+                            .map { it.trim().removePrefix("\"").removeSuffix("\"") }
+                            .filter { it.isNotEmpty() && it != "null" }
+                    }
                 } else {
                     emptyList()
                 }
@@ -889,81 +957,442 @@ class TaskExecutor(
             Log.e(TAG, "Failed to parse JavaScript result: ${e.message}")
             emptyList()
         }
+        
+        // If no results found and selector is for iframe, try to find all iframes as fallback
+        if (extracted.isEmpty() && selector.contains("iframe")) {
+            Log.d(TAG, "No results found with selector '$selector', trying fallback: find all iframes")
+            val fallbackScript = """
+                (function() {
+                    try {
+                        var iframes = document.querySelectorAll('iframe[src]');
+                        var results = [];
+                        iframes.forEach(function(iframe) {
+                            var src = iframe.src || iframe.getAttribute('src') || '';
+                            if (src && src.trim()) {
+                                results.push(src.trim());
+                            }
+                        });
+                        return JSON.stringify(results);
+                    } catch(e) {
+                        return JSON.stringify([]);
+                    }
+                })();
+            """.trimIndent()
+            
+            val fallbackResult = browser.evaluateJavascript(fallbackScript)
+            Log.d(TAG, "Fallback extraction result: ${fallbackResult?.take(200)}")
+            
+            return try {
+                if (!fallbackResult.isNullOrEmpty() && fallbackResult != "null" && fallbackResult != "[]") {
+                    val cleanResult = fallbackResult.trim()
+                        .removePrefix("\"")
+                        .removeSuffix("\"")
+                        .replace("\\\"", "\"")
+                    
+                    if (cleanResult.startsWith("[") && cleanResult.endsWith("]")) {
+                        val jsonArray = org.json.JSONArray(cleanResult)
+                        val results = mutableListOf<String>()
+                        for (i in 0 until jsonArray.length()) {
+                            val value = jsonArray.getString(i)
+                            if (value.isNotEmpty()) {
+                                results.add(value)
+                            }
+                        }
+                        Log.d(TAG, "Fallback found ${results.size} iframes")
+                        results
+                    } else {
+                        extracted
+                    }
+                } else {
+                    extracted
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to parse fallback result: ${e.message}")
+                extracted
+            }
+        }
+        
+        return extracted
     }
 
     /**
      * Extract all links from page that might be ad links
      * This helps find links that can be copied (like "Copy link address" in context menu)
+     * Improved to find links that visually overlap with iframes (like browser does)
      */
     private suspend fun extractAllPageLinks(browser: BrowserController, excludeDomain: String): List<String> {
         val script = """
             (function() {
                 try {
                     var links = [];
-                    // Get all links on page
+                    var excludeHost = '$excludeDomain';
+                    
+                    // Function to check if URL should be included
+                    function shouldIncludeUrl(url) {
+                        if (!url || !url.trim() || url === '#' || url.startsWith('javascript:')) return false;
+                        if (!url.startsWith('http')) return false;
+                        try {
+                            var urlObj = new URL(url);
+                            var hostname = urlObj.hostname;
+                            // Exclude current domain
+                            if (excludeHost && (hostname === excludeHost || hostname.includes(excludeHost) || excludeHost.includes(hostname))) {
+                                return false;
+                            }
+                            // Exclude ad network domains
+                            if (hostname.includes('googlesyndication') || 
+                                hostname.includes('doubleclick') || 
+                                hostname.includes('googleadservices') ||
+                                hostname.includes('pagead') ||
+                                hostname.includes('adservice') ||
+                                (hostname.includes('google.com') && !hostname.includes('googleusercontent'))) {
+                                return false;
+                            }
+                            return true;
+                        } catch(e) {
+                            return true;
+                        }
+                    }
+                    
+                    // Function to extract URL from onclick handler
+                    function extractUrlFromOnclick(onclickStr) {
+                        if (!onclickStr) return null;
+                        // Try to find URL patterns in onclick
+                        var patterns = [
+                            /window\.open\(['"]([^'"]+)['"]/,
+                            /location\.href\s*=\s*['"]([^'"]+)['"]/,
+                            /window\.location\s*=\s*['"]([^'"]+)['"]/,
+                            /https?:\/\/[^\s"',;\)]+/g
+                        ];
+                        for (var i = 0; i < patterns.length; i++) {
+                            var match = onclickStr.match(patterns[i]);
+                            if (match) {
+                                if (Array.isArray(match)) {
+                                    return match.filter(function(m) { return m && m.startsWith('http'); });
+                                } else if (match[1]) {
+                                    return [match[1]];
+                                }
+                            }
+                        }
+                        return null;
+                    }
+                    
+                    // 1. Get ALL links on page (comprehensive search)
                     var allLinks = document.querySelectorAll('a[href]');
                     allLinks.forEach(function(a) {
                         var href = a.href || a.getAttribute('href') || '';
-                        if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                        if (shouldIncludeUrl(href)) {
                             links.push(href.trim());
                         }
+                        // Also check onclick for URLs
+                        var onclick = a.getAttribute('onclick') || a.onclick?.toString() || '';
+                        if (onclick) {
+                            var urls = extractUrlFromOnclick(onclick);
+                            if (urls) {
+                                urls.forEach(function(url) {
+                                    if (shouldIncludeUrl(url)) {
+                                        links.push(url.trim());
+                                    }
+                                });
+                            }
+                        }
                     });
-                    // Also try to get links from ad containers
-                    var adContainers = document.querySelectorAll('ins.adsbygoogle, .ad, .ads, .advertisement, [class*="ad-"], [id*="ad-"]');
+                    
+                    // 2. Find links that visually overlap with ad iframes (like browser context menu does)
+                    var iframes = document.querySelectorAll('iframe[src*="googlesyndication"], iframe[src*="doubleclick"], iframe[src*="pagead"], iframe[src*="googleadservices"]');
+                    iframes.forEach(function(iframe) {
+                        try {
+                            var iframeRect = iframe.getBoundingClientRect();
+                            
+                            // Find all links that visually overlap with this iframe
+                            var allPageLinks = document.querySelectorAll('a[href]');
+                            allPageLinks.forEach(function(link) {
+                                try {
+                                    var linkRect = link.getBoundingClientRect();
+                                    // Check if link overlaps with iframe (like browser does for context menu)
+                                    var overlaps = !(linkRect.right < iframeRect.left || 
+                                                    linkRect.left > iframeRect.right || 
+                                                    linkRect.bottom < iframeRect.top || 
+                                                    linkRect.top > iframeRect.bottom);
+                                    
+                                    if (overlaps) {
+                                        var href = link.href || link.getAttribute('href') || '';
+                                        if (shouldIncludeUrl(href)) {
+                                            links.push(href.trim());
+                                        }
+                                        // Also check onclick for URLs
+                                        var onclick = link.getAttribute('onclick') || link.onclick?.toString() || '';
+                                        if (onclick) {
+                                            var urls = extractUrlFromOnclick(onclick);
+                                            if (urls) {
+                                                urls.forEach(function(url) {
+                                                    if (shouldIncludeUrl(url)) {
+                                                        links.push(url.trim());
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    }
+                                } catch(e) {}
+                            });
+                            
+                            // Also check if iframe itself or its parent has onclick handlers with URLs
+                            var iframeOnclick = iframe.getAttribute('onclick') || '';
+                            if (iframeOnclick) {
+                                var urls = extractUrlFromOnclick(iframeOnclick);
+                                if (urls) {
+                                    urls.forEach(function(url) {
+                                        if (shouldIncludeUrl(url)) {
+                                            links.push(url.trim());
+                                        }
+                                    });
+                                }
+                            }
+                            
+                            // Check parent elements for onclick handlers
+                            var parent = iframe.parentElement;
+                            var parentLevel = 0;
+                            while (parent && parentLevel < 5) {
+                                var parentOnclick = parent.getAttribute('onclick') || '';
+                                if (parentOnclick) {
+                                    var urls = extractUrlFromOnclick(parentOnclick);
+                                    if (urls) {
+                                        urls.forEach(function(url) {
+                                            if (shouldIncludeUrl(url)) {
+                                                links.push(url.trim());
+                                            }
+                                        });
+                                    }
+                                }
+                                parent = parent.parentElement;
+                                parentLevel++;
+                            }
+                            
+                            // 3. Check all parent elements up to 5 levels for links
+                            var parent = iframe.parentElement;
+                            var level = 0;
+                            while (parent && level < 5) {
+                                // Check if parent itself is a link
+                                if (parent.tagName === 'A' && parent.href) {
+                                    var href = parent.href || parent.getAttribute('href') || '';
+                                    if (shouldIncludeUrl(href)) {
+                                        links.push(href.trim());
+                                    }
+                                }
+                                // Check all links inside parent
+                                var parentLinks = parent.querySelectorAll('a[href]');
+                                parentLinks.forEach(function(a) {
+                                    var href = a.href || a.getAttribute('href') || '';
+                                    if (shouldIncludeUrl(href)) {
+                                        links.push(href.trim());
+                                    }
+                                });
+                                parent = parent.parentElement;
+                                level++;
+                            }
+                            
+                            // 4. Check siblings (next, previous, and all siblings)
+                            var siblings = [];
+                            var next = iframe.nextElementSibling;
+                            while (next && siblings.length < 3) {
+                                siblings.push(next);
+                                next = next.nextElementSibling;
+                            }
+                            var prev = iframe.previousElementSibling;
+                            while (prev && siblings.length < 6) {
+                                siblings.push(prev);
+                                prev = prev.previousElementSibling;
+                            }
+                            
+                            siblings.forEach(function(sibling) {
+                                if (sibling.tagName === 'A' && sibling.href) {
+                                    var href = sibling.href || sibling.getAttribute('href') || '';
+                                    if (shouldIncludeUrl(href)) {
+                                        links.push(href.trim());
+                                    }
+                                }
+                                var siblingLinks = sibling.querySelectorAll('a[href]');
+                                siblingLinks.forEach(function(a) {
+                                    var href = a.href || a.getAttribute('href') || '';
+                                    if (shouldIncludeUrl(href)) {
+                                        links.push(href.trim());
+                                    }
+                                });
+                            });
+                        } catch(e) {}
+                    });
+                    
+                    // 5. Extract from ad containers
+                    var adContainers = document.querySelectorAll('ins.adsbygoogle, .ad, .ads, .advertisement, [class*="ad-"], [id*="ad-"], [data-ad-slot]');
                     adContainers.forEach(function(container) {
+                        // Check if container itself is a link
+                        if (container.tagName === 'A' && container.href) {
+                            var href = container.href || container.getAttribute('href') || '';
+                            if (shouldIncludeUrl(href)) {
+                                links.push(href.trim());
+                            }
+                        }
+                        // Get all links inside container
                         var containerLinks = container.querySelectorAll('a[href]');
                         containerLinks.forEach(function(a) {
                             var href = a.href || a.getAttribute('href') || '';
-                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
+                            if (shouldIncludeUrl(href)) {
                                 links.push(href.trim());
                             }
                         });
                     });
-                    // Also try to get links near iframes (sibling elements)
-                    var iframes = document.querySelectorAll('iframe[src*="googlesyndication"], iframe[src*="doubleclick"]');
+                    
+                    // 6. Extract from elements with onclick handlers that might contain URLs
+                    var clickableElements = document.querySelectorAll('[onclick], [data-onclick]');
+                    clickableElements.forEach(function(el) {
+                        var onclick = el.getAttribute('onclick') || el.getAttribute('data-onclick') || '';
+                        if (onclick) {
+                            var urls = extractUrlFromOnclick(onclick);
+                            if (urls) {
+                                urls.forEach(function(url) {
+                                    if (shouldIncludeUrl(url)) {
+                                        links.push(url.trim());
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    
+                    // 7. Try to get links from iframe content (if same-origin)
                     iframes.forEach(function(iframe) {
-                        // Try to get parent element and find links inside
+                        try {
+                            var iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                            if (iframeDoc) {
+                                var iframeLinks = iframeDoc.querySelectorAll('a[href]');
+                                iframeLinks.forEach(function(a) {
+                                    var href = a.href || a.getAttribute('href') || '';
+                                    if (shouldIncludeUrl(href)) {
+                                        links.push(href.trim());
+                                    }
+                                });
+                            }
+                        } catch(e) {
+                            // Same-origin policy - can't access
+                        }
+                        
+                        // Extract from data attributes on iframe and its parents
+                        var dataAttrs = ['data-ad-url', 'data-adurl', 'data-dest-url', 'data-redirect', 'data-click-url', 'data-url', 'data-href', 'data-link'];
+                        dataAttrs.forEach(function(attr) {
+                            var value = iframe.getAttribute(attr);
+                            if (value && shouldIncludeUrl(value)) {
+                                links.push(value.trim());
+                            }
+                        });
+                        
+                        // Check parent elements for data attributes
                         var parent = iframe.parentElement;
-                        if (parent) {
-                            var parentLinks = parent.querySelectorAll('a[href]');
-                            parentLinks.forEach(function(a) {
-                                var href = a.href || a.getAttribute('href') || '';
-                                if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
-                                    links.push(href.trim());
+                        var parentLevel = 0;
+                        while (parent && parentLevel < 5) {
+                            dataAttrs.forEach(function(attr) {
+                                var value = parent.getAttribute(attr);
+                                if (value && shouldIncludeUrl(value)) {
+                                    links.push(value.trim());
                                 }
                             });
-                        }
-                        // Try to get next sibling
-                        var nextSibling = iframe.nextElementSibling;
-                        if (nextSibling && nextSibling.tagName === 'A') {
-                            var href = nextSibling.href || nextSibling.getAttribute('href') || '';
-                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
-                                links.push(href.trim());
-                            }
-                        }
-                        // Try to get previous sibling
-                        var prevSibling = iframe.previousElementSibling;
-                        if (prevSibling && prevSibling.tagName === 'A') {
-                            var href = prevSibling.href || prevSibling.getAttribute('href') || '';
-                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
-                                links.push(href.trim());
-                            }
+                            parent = parent.parentElement;
+                            parentLevel++;
                         }
                     });
-                    // Try to get links from elements that might wrap iframes
-                    var iframeWrappers = document.querySelectorAll('div:has(iframe[src*="googlesyndication"]), div:has(iframe[src*="doubleclick"])');
-                    iframeWrappers.forEach(function(wrapper) {
-                        var wrapperLinks = wrapper.querySelectorAll('a[href]');
-                        wrapperLinks.forEach(function(a) {
+                    
+                    // 8. Extract from global JavaScript variables (Google AdSense might store URLs here)
+                    try {
+                        if (window.google_ads_iframe_onload || window.google_ads_iframe_loaded) {
+                            // Search for URLs in window object
+                            for (var key in window) {
+                                try {
+                                    var value = window[key];
+                                    if (typeof value === 'string' && value.startsWith('http') && shouldIncludeUrl(value)) {
+                                        links.push(value.trim());
+                                    } else if (typeof value === 'object' && value !== null) {
+                                        try {
+                                            var jsonStr = JSON.stringify(value);
+                                            var urlMatches = jsonStr.match(/https?:\/\/[^\s"',;\)]+/g);
+                                            if (urlMatches) {
+                                                urlMatches.forEach(function(url) {
+                                                    if (shouldIncludeUrl(url)) {
+                                                        links.push(url.trim());
+                                                    }
+                                                });
+                                            }
+                                        } catch(e) {}
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    } catch(e) {}
+                    
+                    // 9. Find ALL links on page (including hidden ones) - this mimics "copy link address" behavior
+                    var allLinksOnPage = document.querySelectorAll('a[href]');
+                    allLinksOnPage.forEach(function(a) {
+                        try {
+                            // Get computed style to check if visible
+                            var style = window.getComputedStyle(a);
+                            var isVisible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                            
+                            // Include all links, even hidden ones (they might be the ones we need)
                             var href = a.href || a.getAttribute('href') || '';
-                            if (href && href.trim() && href !== '#' && !href.startsWith('javascript:')) {
-                                links.push(href.trim());
+                            if (href && href.startsWith('http')) {
+                                // Check if this link is near an ad iframe
+                                var linkRect = a.getBoundingClientRect();
+                                var nearAd = false;
+                                
+                                iframes.forEach(function(iframe) {
+                                    try {
+                                        var iframeRect = iframe.getBoundingClientRect();
+                                        // Check if link is within 50px of iframe
+                                        var distance = Math.sqrt(
+                                            Math.pow(linkRect.left - iframeRect.left, 2) + 
+                                            Math.pow(linkRect.top - iframeRect.top, 2)
+                                        );
+                                        if (distance < 50) {
+                                            nearAd = true;
+                                        }
+                                    } catch(e) {}
+                                });
+                                
+                                // Include if it's near an ad or contains ad-related keywords
+                                if (nearAd || href.includes('adurl') || href.includes('googleads') || 
+                                    href.includes('doubleclick') || href.includes('googlesyndication')) {
+                                    if (shouldIncludeUrl(href)) {
+                                        links.push(href.trim());
+                                    }
+                                }
                             }
-                        });
+                        } catch(e) {}
                     });
-                    // Remove duplicates
-                    return JSON.stringify([...new Set(links)]);
+                    
+                    // 10. Search in shadow DOM (if available)
+                    try {
+                        var walker = document.createTreeWalker(
+                            document.body,
+                            NodeFilter.SHOW_ELEMENT,
+                            null,
+                            false
+                        );
+                        var node;
+                        while (node = walker.nextNode()) {
+                            if (node.shadowRoot) {
+                                var shadowLinks = node.shadowRoot.querySelectorAll('a[href]');
+                                shadowLinks.forEach(function(a) {
+                                    var href = a.href || a.getAttribute('href') || '';
+                                    if (href && shouldIncludeUrl(href)) {
+                                        links.push(href.trim());
+                                    }
+                                });
+                            }
+                        }
+                    } catch(e) {}
+                    
+                    // Remove duplicates and return
+                    var uniqueLinks = [...new Set(links)];
+                    console.log('Total unique links found:', uniqueLinks.length);
+                    return JSON.stringify(uniqueLinks);
                 } catch(e) {
+                    console.error('extractAllPageLinks error:', e);
                     return JSON.stringify([]);
                 }
             })();
@@ -975,6 +1404,7 @@ class TaskExecutor(
             if (result.isNullOrEmpty() || result == "null" || result == "[]") {
                 emptyList()
             } else {
+                // Parse JSON array properly
                 val cleanResult = result.trim()
                     .removePrefix("\"")
                     .removeSuffix("\"")
@@ -982,20 +1412,17 @@ class TaskExecutor(
                     .replace("\\n", "\n")
                 
                 if (cleanResult.startsWith("[") && cleanResult.endsWith("]")) {
-                    cleanResult
-                        .removeSurrounding("[", "]")
-                        .split("\",\"")
-                        .map { it.trim().removePrefix("\"").removeSuffix("\"") }
-                        .filter { it.isNotEmpty() && it.startsWith("http") }
-                        .filter { link ->
-                            // Filter out links from current domain
-                            try {
-                                val linkDomain = java.net.URL(link).host
-                                linkDomain != excludeDomain && !linkDomain.contains(excludeDomain) && !excludeDomain.contains(linkDomain)
-                            } catch (e: Exception) {
-                                true
-                            }
+                    // Use JSON parser for proper array parsing
+                    val jsonArray = org.json.JSONArray(cleanResult)
+                    val links = mutableListOf<String>()
+                    for (i in 0 until jsonArray.length()) {
+                        val link = jsonArray.getString(i)
+                        if (link.isNotEmpty() && link.startsWith("http")) {
+                            links.add(link)
                         }
+                    }
+                    Log.d(TAG, "Extracted ${links.size} links from page (before filtering)")
+                    links
                 } else {
                     emptyList()
                 }
@@ -1028,10 +1455,275 @@ class TaskExecutor(
     }
 
     /**
+     * Extract links from iframe content (may fail due to same-origin policy)
+     */
+    private suspend fun extractLinksFromIframes(browser: BrowserController, excludeDomain: String): List<String> {
+        val script = """
+            (function() {
+                try {
+                    var adUrls = [];
+                    var excludeHost = '$excludeDomain';
+                    
+                    // Function to extract URL from various sources
+                    function extractUrlFromString(str) {
+                        if (!str || typeof str !== 'string') return null;
+                        var urlMatch = str.match(/https?:\/\/[^\s"',;\)]+/g);
+                        if (urlMatch && urlMatch.length > 0) {
+                            return urlMatch.filter(function(url) {
+                                return !url.includes('googlesyndication') && 
+                                       !url.includes('doubleclick') && 
+                                       !url.includes('pagead') &&
+                                       !url.includes('googleadservices') &&
+                                       !url.includes('google.com/search') &&
+                                       !url.includes('google.com/url');
+                            });
+                        }
+                        return null;
+                    }
+                    
+                    // Function to check if URL should be excluded
+                    function shouldIncludeUrl(url) {
+                        if (!url || !url.startsWith('http')) return false;
+                        try {
+                            var urlObj = new URL(url);
+                            var hostname = urlObj.hostname;
+                            if (excludeHost && (hostname === excludeHost || hostname.includes(excludeHost) || excludeHost.includes(hostname))) {
+                                return false;
+                            }
+                            // Exclude ad network domains
+                            if (hostname.includes('googlesyndication') || 
+                                hostname.includes('doubleclick') || 
+                                hostname.includes('googleadservices') ||
+                                hostname.includes('google.com')) {
+                                return false;
+                            }
+                            return true;
+                        } catch(e) {
+                            return true;
+                        }
+                    }
+                    
+                    // 1. Extract from iframe elements and their parents
+                    var iframes = document.querySelectorAll('iframe[src*="googlesyndication"], iframe[src*="doubleclick"], iframe[src*="pagead"], iframe[src*="googleadservices"]');
+                    iframes.forEach(function(iframe) {
+                        try {
+                            // Try to access iframe content (may fail due to same-origin policy)
+                            var iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                            if (iframeDoc) {
+                                // Get all links from iframe
+                                var iframeLinks = iframeDoc.querySelectorAll('a[href]');
+                                iframeLinks.forEach(function(a) {
+                                    var href = a.href || a.getAttribute('href') || '';
+                                    if (shouldIncludeUrl(href)) {
+                                        adUrls.push(href.trim());
+                                    }
+                                });
+                            }
+                        } catch(e) {
+                            // Same-origin policy - can't access iframe content
+                        }
+                        
+                        // Get data attributes from iframe
+                        var dataAttrs = ['data-ad-url', 'data-adurl', 'data-dest-url', 'data-redirect', 'data-click-url', 'data-url'];
+                        dataAttrs.forEach(function(attr) {
+                            var value = iframe.getAttribute(attr);
+                            if (value && shouldIncludeUrl(value)) {
+                                adUrls.push(value);
+                            }
+                        });
+                        
+                        // Extract from onclick handler
+                        var onclick = iframe.getAttribute('onclick');
+                        if (onclick) {
+                            var urls = extractUrlFromString(onclick);
+                            if (urls) {
+                                urls.forEach(function(url) {
+                                    if (shouldIncludeUrl(url)) {
+                                        adUrls.push(url);
+                                    }
+                                });
+                            }
+                        }
+                        
+                        // Check parent elements for ad URLs
+                        var parent = iframe.parentElement;
+                        var depth = 0;
+                        while (parent && depth < 3) {
+                            // Check parent data attributes
+                            dataAttrs.forEach(function(attr) {
+                                var value = parent.getAttribute(attr);
+                                if (value && shouldIncludeUrl(value)) {
+                                    adUrls.push(value);
+                                }
+                            });
+                            
+                            // Check parent onclick
+                            var parentOnclick = parent.getAttribute('onclick');
+                            if (parentOnclick) {
+                                var urls = extractUrlFromString(parentOnclick);
+                                if (urls) {
+                                    urls.forEach(function(url) {
+                                        if (shouldIncludeUrl(url)) {
+                                            adUrls.push(url);
+                                        }
+                                    });
+                                }
+                            }
+                            
+                            // Check for links adjacent to or wrapping the iframe
+                            var adjacentLinks = parent.querySelectorAll('a[href]');
+                            adjacentLinks.forEach(function(a) {
+                                var href = a.href || a.getAttribute('href') || '';
+                                if (shouldIncludeUrl(href)) {
+                                    adUrls.push(href);
+                                }
+                            });
+                            
+                            parent = parent.parentElement;
+                            depth++;
+                        }
+                    });
+                    
+                    // 2. Extract from Google AdSense containers
+                    var adContainers = document.querySelectorAll('ins.adsbygoogle, .adsbygoogle, [data-ad-slot], [data-ad-client], [class*="ad-"], [id*="ad-"], [class*="ads-"], [id*="ads-"]');
+                    adContainers.forEach(function(container) {
+                        // Check data attributes
+                        var attrs = ['data-ad-url', 'data-adurl', 'data-dest-url', 'data-redirect', 'data-click-url', 'data-url', 'data-href'];
+                        attrs.forEach(function(attr) {
+                            var value = container.getAttribute(attr);
+                            if (value && shouldIncludeUrl(value)) {
+                                adUrls.push(value);
+                            }
+                        });
+                        
+                        // Check onclick handler
+                        var onclick = container.getAttribute('onclick');
+                        if (onclick) {
+                            var urls = extractUrlFromString(onclick);
+                            if (urls) {
+                                urls.forEach(function(url) {
+                                    if (shouldIncludeUrl(url)) {
+                                        adUrls.push(url);
+                                    }
+                                });
+                            }
+                        }
+                        
+                        // Check for links inside container
+                        var links = container.querySelectorAll('a[href]');
+                        links.forEach(function(a) {
+                            var href = a.href || a.getAttribute('href') || '';
+                            if (shouldIncludeUrl(href)) {
+                                adUrls.push(href);
+                            }
+                        });
+                        
+                        // Check for links adjacent to container
+                        var nextSibling = container.nextElementSibling;
+                        if (nextSibling && nextSibling.tagName === 'A') {
+                            var href = nextSibling.href || nextSibling.getAttribute('href') || '';
+                            if (shouldIncludeUrl(href)) {
+                                adUrls.push(href);
+                            }
+                        }
+                    });
+                    
+                    // 3. Extract from elements with ad-related click handlers
+                    var clickableAds = document.querySelectorAll('[onclick*="http"], [onclick*="adurl"], [onclick*="redirect"], [data-onclick]');
+                    clickableAds.forEach(function(element) {
+                        var onclick = element.getAttribute('onclick') || element.getAttribute('data-onclick') || '';
+                        if (onclick) {
+                            var urls = extractUrlFromString(onclick);
+                            if (urls) {
+                                urls.forEach(function(url) {
+                                    if (shouldIncludeUrl(url)) {
+                                        adUrls.push(url);
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    
+                    // 4. Try to extract from window object (if ad scripts expose URLs)
+                    try {
+                        if (window.google_ads_iframe_onload) {
+                            // Google AdSense might expose some data
+                            for (var key in window) {
+                                try {
+                                    var value = window[key];
+                                    if (typeof value === 'string' && shouldIncludeUrl(value)) {
+                                        adUrls.push(value);
+                                    } else if (typeof value === 'object' && value !== null) {
+                                        var jsonStr = JSON.stringify(value);
+                                        var urls = extractUrlFromString(jsonStr);
+                                        if (urls) {
+                                            urls.forEach(function(url) {
+                                                if (shouldIncludeUrl(url)) {
+                                                    adUrls.push(url);
+                                                }
+                                            });
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    } catch(e) {}
+                    
+                    // Remove duplicates and filter
+                    var uniqueUrls = [...new Set(adUrls)];
+                    var filtered = uniqueUrls.filter(shouldIncludeUrl);
+                    
+                    return JSON.stringify(filtered);
+                } catch(e) {
+                    return JSON.stringify([]);
+                }
+            })();
+        """.trimIndent()
+        
+        val result = browser.evaluateJavascript(script) ?: "[]"
+        
+        return try {
+            val jsonArray = org.json.JSONArray(result)
+            val urls = mutableListOf<String>()
+            for (i in 0 until jsonArray.length()) {
+                val url = jsonArray.getString(i)
+                if (url.isNotEmpty()) {
+                    urls.add(url)
+                }
+            }
+            Log.d(TAG, "Extracted ${urls.size} URLs from iframes and ad containers")
+            urls
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse iframe extraction result: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
      * Send task result to backend
      */
     private suspend fun sendResultToBackend(taskId: String, result: TaskResult) {
         try {
+            // Log what we're about to send
+            val adUrls = result.data?.get("ad_urls")
+            val adLinks = result.data?.get("ad_links")
+            val adDomains = result.data?.get("ad_domains")
+            
+            Log.i(TAG, "=== PREPARING TO SEND TASK RESULT ===")
+            Log.i(TAG, "TaskId: $taskId, DeviceId: $deviceId, Success: ${result.success}")
+            Log.i(TAG, "Data keys: ${result.data?.keys?.joinToString(", ")}")
+            Log.i(TAG, "ad_urls type: ${adUrls?.javaClass?.simpleName}, value: $adUrls")
+            Log.i(TAG, "ad_links type: ${adLinks?.javaClass?.simpleName}, count: ${if (adLinks is List<*>) adLinks.size else "N/A"}")
+            Log.i(TAG, "ad_domains type: ${adDomains?.javaClass?.simpleName}, count: ${if (adDomains is List<*>) adDomains.size else "N/A"}")
+            
+            if (adUrls is List<*>) {
+                Log.i(TAG, "ad_urls count: ${adUrls.size}, sample: ${adUrls.take(3)}")
+            } else if (adUrls != null) {
+                Log.i(TAG, "ad_urls (not a list): $adUrls")
+            } else {
+                Log.w(TAG, "⚠️ ad_urls is NULL or missing!")
+            }
+            
             val request = ApiClient.TaskResultRequest(
                 success = result.success,
                 data = result.data,
@@ -1042,9 +1734,9 @@ class TaskExecutor(
             
             Log.d(TAG, "Sending task result to backend: taskId=$taskId, deviceId=$deviceId, success=${result.success}")
             val sent = apiClient.sendTaskResult(taskId, request, deviceId)
-            Log.d(TAG, "Task result sent: $sent")
+            Log.i(TAG, "Task result sent: $sent")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to send result to backend: ${e.message}")
+            Log.e(TAG, "Failed to send result to backend: ${e.message}", e)
         }
     }
 
