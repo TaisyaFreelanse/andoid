@@ -33,6 +33,8 @@ export const config = {
   
   semrush: {
     apiKey: process.env.SEMRUSH_API_KEY || '',
+    rapidApiKey: process.env.SEMRUSH_RAPIDAPI_KEY || '',
+    useRapidApi: process.env.SEMRUSH_USE_RAPIDAPI === 'true',
   },
   
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',

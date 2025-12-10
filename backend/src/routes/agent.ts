@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { storageService } from '../services/storage.service';
 import { semrushService } from '../services/semrush.service';
 import { broadcastLog } from './logs';
+import { domainCheckerService } from '../services/domain-checker.service';
 
 export async function agentRoutes(fastify: FastifyInstance) {
   
@@ -364,25 +365,131 @@ export async function agentRoutes(fastify: FastifyInstance) {
           const titles = resultData.titles || resultData.extracted_data || [];
           const links = resultData.links || [];
           const adUrls = resultData.ad_urls || [];
+          const adDomains = resultData.ad_domains || [];
           const screenshots = resultData.screenshots || body.screenshots || [];
           
-          // Create parsed data record with extracted info
-          await prisma.parsedData.create({
-            data: {
-              taskId: taskId,
-              url: url,
-              adUrl: adUrls[0] || resultData.adUrl || null,
-              adDomain: resultData.ad_domain || resultData.adDomain || null,
-              screenshotPath: screenshots[0] || resultData.screenshot || resultData.screenshotPath || null,
-            },
-          });
+          // Process ad_domains array: check via API and save only valid domains
+          let savedDomainsCount = 0;
+          let skippedDomainsCount = 0;
+          
+          if (Array.isArray(adDomains) && adDomains.length > 0) {
+            logger.info({ taskId, domainsCount: adDomains.length }, 'Processing ad_domains array');
+            
+            // Check all domains via API
+            const domainCheckResults = await domainCheckerService.checkDomains(adDomains);
+            
+            // Save only valid domains (that exist and have metrics)
+            for (const domain of adDomains) {
+              if (!domain || typeof domain !== 'string') continue;
+              
+              const checkResult = domainCheckResults.get(domain);
+              
+              // Check if domain should be saved
+              const shouldSave = checkResult?.exists && checkResult?.isValid && 
+                                (checkResult.metrics?.domainRank !== undefined || 
+                                 checkResult.metrics?.organicKeywords !== undefined ||
+                                 checkResult.metrics?.backlinks !== undefined);
+              
+              if (!shouldSave) {
+                skippedDomainsCount++;
+                logger.debug({ taskId, domain, reason: checkResult ? 'invalid_or_no_metrics' : 'check_failed' }, 'Skipping domain');
+                continue;
+              }
+              
+              // Check for duplicate in database
+              const existing = await prisma.parsedData.findFirst({
+                where: {
+                  taskId: taskId,
+                  adDomain: domain,
+                },
+              });
+              
+              if (existing) {
+                skippedDomainsCount++;
+                logger.debug({ taskId, domain }, 'Duplicate domain skipped');
+                continue;
+              }
+              
+              // Save domain
+              try {
+                await prisma.parsedData.create({
+                  data: {
+                    taskId: taskId,
+                    url: url,
+                    adDomain: domain,
+                    adUrl: adUrls.find((u: string) => u && u.includes(domain)) || null,
+                    screenshotPath: screenshots[0] || resultData.screenshot || resultData.screenshotPath || null,
+                  },
+                });
+                savedDomainsCount++;
+                logger.info({ taskId, domain, metrics: checkResult.metrics }, 'Domain saved after API check');
+              } catch (saveErr: any) {
+                // Handle unique constraint violation
+                if (saveErr.code === 'P2002') {
+                  skippedDomainsCount++;
+                  logger.debug({ taskId, domain }, 'Duplicate domain (unique constraint)');
+                } else {
+                  logger.warn({ taskId, domain, error: saveErr }, 'Failed to save domain');
+                }
+              }
+            }
+            
+            logger.info({ 
+              taskId, 
+              totalDomains: adDomains.length, 
+              saved: savedDomainsCount, 
+              skipped: skippedDomainsCount 
+            }, 'Ad domains processing completed');
+          } else {
+            // Fallback: save single domain if ad_domains array is empty
+            const singleDomain = resultData.ad_domain || resultData.adDomain;
+            if (singleDomain) {
+              // Check domain via API before saving
+              const shouldSave = await domainCheckerService.shouldSaveDomain(singleDomain);
+              
+              if (shouldSave) {
+                // Check for duplicate
+                const existing = await prisma.parsedData.findFirst({
+                  where: {
+                    taskId: taskId,
+                    adDomain: singleDomain,
+                  },
+                });
+                
+                if (!existing) {
+                  await prisma.parsedData.create({
+                    data: {
+                      taskId: taskId,
+                      url: url,
+                      adUrl: adUrls[0] || resultData.adUrl || null,
+                      adDomain: singleDomain,
+                      screenshotPath: screenshots[0] || resultData.screenshot || resultData.screenshotPath || null,
+                    },
+                  });
+                  savedDomainsCount = 1;
+                  logger.info({ taskId, domain: singleDomain }, 'Single domain saved after API check');
+                } else {
+                  logger.debug({ taskId, domain: singleDomain }, 'Duplicate single domain skipped');
+                }
+              } else {
+                logger.debug({ taskId, domain: singleDomain }, 'Single domain skipped (invalid or no metrics)');
+              }
+            }
+          }
           
           // Log extracted data count
           const extractedCount = (titles?.length || 0) + (links?.length || 0);
-          logger.info({ taskId, taskType, titlesCount: titles?.length, linksCount: links?.length }, 'Parsed data auto-saved');
+          logger.info({ 
+            taskId, 
+            taskType, 
+            titlesCount: titles?.length, 
+            linksCount: links?.length,
+            savedDomainsCount,
+            skippedDomainsCount
+          }, 'Parsed data auto-saved');
           
-          if (extractedCount > 0) {
-            broadcastLog(`💾 Артефакт парсинга сохранён: ${url} (${extractedCount} элементов)`, 'info');
+          if (extractedCount > 0 || savedDomainsCount > 0) {
+            broadcastLog(`💾 Артефакт парсинга сохранён: ${url} (${extractedCount} элементов, ${savedDomainsCount} доменов)`, 'info');
           } else {
             broadcastLog(`💾 Артефакт парсинга сохранён: ${url}`, 'info');
           }
@@ -536,6 +643,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
     try {
       
       if (body.adDomain) {
+        // Check for duplicate first
         const existing = await prisma.parsedData.findFirst({
           where: {
             taskId: body.taskId,
@@ -551,6 +659,20 @@ export async function agentRoutes(fastify: FastifyInstance) {
             id: existing.id,
           };
         }
+
+        // Check domain via API BEFORE saving
+        const shouldSave = await domainCheckerService.shouldSaveDomain(body.adDomain);
+        
+        if (!shouldSave) {
+          logger.info({ taskId: body.taskId, adDomain: body.adDomain }, 'Domain skipped (invalid or no metrics from API)');
+          return {
+            success: true,
+            message: 'Domain invalid or has no metrics, skipped',
+            skipped: true,
+          };
+        }
+
+        logger.info({ taskId: body.taskId, adDomain: body.adDomain }, 'Domain validated via API, saving');
       }
 
       const parsedData = await prisma.parsedData.create({
@@ -563,21 +685,23 @@ export async function agentRoutes(fastify: FastifyInstance) {
         },
       });
 
-      if (body.adDomain) {
-        try {
-          await semrushService.checkDomain(body.adDomain);
-        } catch (error) {
-          logger.warn({ error, domain: body.adDomain }, 'Semrush check failed');
-        }
-      }
-
       logger.info({ parsedDataId: parsedData.id, taskId: body.taskId }, 'Parsed data saved');
 
       return {
         success: true,
         id: parsedData.id,
       };
-    } catch (error) {
+    } catch (error: any) {
+      // Handle unique constraint violation
+      if (error.code === 'P2002') {
+        logger.info({ taskId: body.taskId, adDomain: body.adDomain }, 'Duplicate domain (unique constraint)');
+        return {
+          success: true,
+          message: 'Duplicate domain, skipped',
+          skipped: true,
+        };
+      }
+      
       logger.error({ error, deviceId, taskId: body.taskId }, 'Error saving parsed data');
       return reply.status(500).send({
         error: {

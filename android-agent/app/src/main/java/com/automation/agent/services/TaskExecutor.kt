@@ -461,9 +461,11 @@ class TaskExecutor(
                 
                 // Also try to extract all links from page that might be ad links
                 // This helps find links that can be copied (like in the screenshot)
+                logAndSend("info", TAG, "Extracting page links with excludeDomain: '$currentDomain'")
                 val allPageLinks = try {
                     extractAllPageLinks(browser, currentDomain)
                 } catch (e: Exception) {
+                    logAndSend("error", TAG, "Failed to extract all page links: ${e.message}")
                     Log.w(TAG, "Failed to extract all page links: ${e.message}")
                     emptyList()
                 }
@@ -762,7 +764,7 @@ class TaskExecutor(
             // Clear if needed
             if (clearBefore) {
                 browser.clear(selector)
-                delay(200)
+            delay(200)
             }
             
             // Try to click to focus first (may fail if element not found yet)
@@ -800,9 +802,9 @@ class TaskExecutor(
                     browser.submit(null) // Submit without selector = press Enter
                     delay(500)
                 }
-                
-                StepResult(
-                    success = true,
+            
+            StepResult(
+                success = true,
                     data = mapOf("selector" to selector, "text" to text, "submitted" to submitAfter)
                 )
             } else {
@@ -1051,7 +1053,7 @@ class TaskExecutor(
                     return JSON.stringify([]);
                 }
             })();
-            """.trimIndent()
+        """.trimIndent()
         }
         
         val result = browser.evaluateJavascript(hrefScript)
@@ -1082,10 +1084,10 @@ class TaskExecutor(
                         results
                     } catch (e: Exception) {
                         // Fallback to simple parsing
-                        cleanResult
-                            .removeSurrounding("[", "]")
+                    cleanResult
+                        .removeSurrounding("[", "]")
                             .split(",")
-                            .map { it.trim().removePrefix("\"").removeSuffix("\"") }
+                        .map { it.trim().removePrefix("\"").removeSuffix("\"") }
                             .filter { it.isNotEmpty() && it != "null" }
                     }
                 } else {
@@ -1165,16 +1167,53 @@ class TaskExecutor(
                 try {
                     var links = [];
                     var excludeHost = '$excludeDomain';
+                    var debugInfo = {
+                        totalLinksFound: 0,
+                        linksAfterFilter: 0,
+                        iframesFound: 0,
+                        errors: [],
+                        filteredLinks: [],
+                        sampleLinks: [],
+                        excludeHost: excludeHost
+                    };
+                    console.log('DEBUG: excludeHost =', excludeHost);
                     
                     // Function to check if URL should be included
-                    function shouldIncludeUrl(url) {
-                        if (!url || !url.trim() || url === '#' || url.startsWith('javascript:')) return false;
-                        if (!url.startsWith('http')) return false;
+                    function shouldIncludeUrl(url, debugReason) {
+                        if (!url || !url.trim() || url === '#' || url.startsWith('javascript:')) {
+                            if (debugReason && debugInfo.filteredLinks.length < 10) {
+                                debugInfo.filteredLinks.push({url: url || '(empty)', reason: 'empty_or_javascript'});
+                            }
+                            return false;
+                        }
+                        if (!url.startsWith('http')) {
+                            if (debugReason && debugInfo.filteredLinks.length < 10) {
+                                debugInfo.filteredLinks.push({url: url, reason: 'not_http'});
+                            }
+                            return false;
+                        }
                         try {
                             var urlObj = new URL(url);
                             var hostname = urlObj.hostname;
-                            // Exclude current domain
-                            if (excludeHost && (hostname === excludeHost || hostname.includes(excludeHost) || excludeHost.includes(hostname))) {
+                            
+                            // Normalize hostnames (remove www. for comparison)
+                            var normalizedHostname = hostname.replace(/^www\./, '');
+                            var normalizedExcludeHost = excludeHost ? excludeHost.replace(/^www\./, '') : '';
+                            
+                            // Exclude current domain (with normalized comparison)
+                            if (excludeHost && (normalizedHostname === normalizedExcludeHost || 
+                                normalizedHostname.includes(normalizedExcludeHost) || 
+                                normalizedExcludeHost.includes(normalizedHostname))) {
+                                if (debugReason && debugInfo.filteredLinks.length < 10) {
+                                    debugInfo.filteredLinks.push({
+                                        url: url, 
+                                        reason: 'same_domain', 
+                                        hostname: hostname, 
+                                        normalizedHostname: normalizedHostname,
+                                        excludeHost: excludeHost,
+                                        normalizedExcludeHost: normalizedExcludeHost
+                                    });
+                                }
                                 return false;
                             }
                             // Exclude ad network domains
@@ -1184,10 +1223,17 @@ class TaskExecutor(
                                 hostname.includes('pagead') ||
                                 hostname.includes('adservice') ||
                                 (hostname.includes('google.com') && !hostname.includes('googleusercontent'))) {
+                                if (debugReason && debugInfo.filteredLinks.length < 10) {
+                                    debugInfo.filteredLinks.push({url: url, reason: 'ad_network', hostname: hostname});
+                                }
                                 return false;
                             }
                             return true;
                         } catch(e) {
+                            // If URL parsing fails, include it (might be relative URL that will be resolved)
+                            if (debugReason && debugInfo.filteredLinks.length < 10) {
+                                debugInfo.filteredLinks.push({url: url, reason: 'parse_error', error: e.message});
+                            }
                             return true;
                         }
                     }
@@ -1217,27 +1263,45 @@ class TaskExecutor(
                     
                     // 1. Get ALL links on page (comprehensive search)
                     var allLinks = document.querySelectorAll('a[href]');
+                    debugInfo.totalLinksFound = allLinks.length;
+                    console.log('DEBUG: Found ' + allLinks.length + ' total links on page');
+                    
                     allLinks.forEach(function(a) {
-                        var href = a.href || a.getAttribute('href') || '';
-                        if (shouldIncludeUrl(href)) {
-                            links.push(href.trim());
-                        }
-                        // Also check onclick for URLs
-                        var onclick = a.getAttribute('onclick') || a.onclick?.toString() || '';
-                        if (onclick) {
-                            var urls = extractUrlFromOnclick(onclick);
-                            if (urls) {
-                                urls.forEach(function(url) {
-                                    if (shouldIncludeUrl(url)) {
-                                        links.push(url.trim());
-                                    }
-                                });
+                        try {
+                            var href = a.href || a.getAttribute('href') || '';
+                            if (href && href.trim() && href.startsWith('http')) {
+                                // Store sample links for debugging
+                                if (debugInfo.sampleLinks.length < 10) {
+                                    debugInfo.sampleLinks.push(href);
+                                }
+                                // First, add ALL http links (for debugging)
+                                if (shouldIncludeUrl(href, true)) {
+                                    links.push(href.trim());
+                                }
                             }
+                            // Also check onclick for URLs
+                            var onclick = a.getAttribute('onclick') || (a.onclick ? a.onclick.toString() : '') || '';
+                            if (onclick) {
+                                var urls = extractUrlFromOnclick(onclick);
+                                if (urls) {
+                                    urls.forEach(function(url) {
+                                        if (shouldIncludeUrl(url, false)) {
+                                            links.push(url.trim());
+                                        }
+                                    });
+                                }
+                            }
+                        } catch(e) {
+                            debugInfo.errors.push('Error processing link: ' + e.message);
                         }
                     });
+                    debugInfo.linksAfterFilter = links.length;
                     
                     // 2. Find links that visually overlap with ad iframes (like browser context menu does)
                     var iframes = document.querySelectorAll('iframe[src*="googlesyndication"], iframe[src*="doubleclick"], iframe[src*="pagead"], iframe[src*="googleadservices"]');
+                    debugInfo.iframesFound = iframes.length;
+                    console.log('DEBUG: Found ' + iframes.length + ' ad iframes');
+                    
                     iframes.forEach(function(iframe) {
                         try {
                             var iframeRect = iframe.getBoundingClientRect();
@@ -1255,7 +1319,7 @@ class TaskExecutor(
                                     
                                     if (overlaps) {
                                         var href = link.href || link.getAttribute('href') || '';
-                                        if (shouldIncludeUrl(href)) {
+                                        if (shouldIncludeUrl(href, false)) {
                                             links.push(href.trim());
                                         }
                                         // Also check onclick for URLs
@@ -1280,7 +1344,7 @@ class TaskExecutor(
                                 var urls = extractUrlFromOnclick(iframeOnclick);
                                 if (urls) {
                                     urls.forEach(function(url) {
-                                        if (shouldIncludeUrl(url)) {
+                                        if (shouldIncludeUrl(url, false)) {
                                             links.push(url.trim());
                                         }
                                     });
@@ -1366,7 +1430,7 @@ class TaskExecutor(
                         // Check if container itself is a link
                         if (container.tagName === 'A' && container.href) {
                             var href = container.href || container.getAttribute('href') || '';
-                            if (shouldIncludeUrl(href)) {
+                            if (shouldIncludeUrl(href, false)) {
                                 links.push(href.trim());
                             }
                         }
@@ -1374,7 +1438,7 @@ class TaskExecutor(
                         var containerLinks = container.querySelectorAll('a[href]');
                         containerLinks.forEach(function(a) {
                             var href = a.href || a.getAttribute('href') || '';
-                            if (shouldIncludeUrl(href)) {
+                            if (shouldIncludeUrl(href, false)) {
                                 links.push(href.trim());
                             }
                         });
@@ -1417,7 +1481,7 @@ class TaskExecutor(
                         var dataAttrs = ['data-ad-url', 'data-adurl', 'data-dest-url', 'data-redirect', 'data-click-url', 'data-url', 'data-href', 'data-link'];
                         dataAttrs.forEach(function(attr) {
                             var value = iframe.getAttribute(attr);
-                            if (value && shouldIncludeUrl(value)) {
+                            if (value && shouldIncludeUrl(value, false)) {
                                 links.push(value.trim());
                             }
                         });
@@ -1444,7 +1508,7 @@ class TaskExecutor(
                             for (var key in window) {
                                 try {
                                     var value = window[key];
-                                    if (typeof value === 'string' && value.startsWith('http') && shouldIncludeUrl(value)) {
+                                    if (typeof value === 'string' && value.startsWith('http') && shouldIncludeUrl(value, false)) {
                                         links.push(value.trim());
                                     } else if (typeof value === 'object' && value !== null) {
                                         try {
@@ -1541,7 +1605,7 @@ class TaskExecutor(
                                                 depth++;
                                             }
                                             // If in ad container OR near iframe (already checked above), include it
-                                            if ((inAdContainer || nearAd || overlapsAd) && shouldIncludeUrl(href)) {
+                                            if ((inAdContainer || nearAd || overlapsAd) && shouldIncludeUrl(href, false)) {
                                                 links.push(href.trim());
                                             }
                                         }
@@ -1574,7 +1638,7 @@ class TaskExecutor(
                                 var shadowLinks = node.shadowRoot.querySelectorAll('a[href]');
                                 shadowLinks.forEach(function(a) {
                                     var href = a.href || a.getAttribute('href') || '';
-                                    if (href && shouldIncludeUrl(href)) {
+                                    if (href && shouldIncludeUrl(href, false)) {
                                         links.push(href.trim());
                                     }
                                 });
@@ -1584,46 +1648,110 @@ class TaskExecutor(
                     
                     // Remove duplicates and return
                     var uniqueLinks = [...new Set(links)];
-                    console.log('Total unique links found:', uniqueLinks.length);
-                    return JSON.stringify(uniqueLinks);
+                    debugInfo.linksAfterFilter = uniqueLinks.length;
+                    console.log('DEBUG: Total unique links found:', uniqueLinks.length);
+                    console.log('DEBUG: Sample links (first 10):', debugInfo.sampleLinks);
+                    console.log('DEBUG: Filtered links (first 10):', debugInfo.filteredLinks);
+                    console.log('DEBUG: Debug info:', JSON.stringify(debugInfo));
+                    
+                    // Return both links and debug info
+                    return JSON.stringify({
+                        links: uniqueLinks,
+                        debug: debugInfo
+                    });
                 } catch(e) {
                     console.error('extractAllPageLinks error:', e);
-                    return JSON.stringify([]);
+                    return JSON.stringify({
+                        links: [],
+                        debug: { error: e.message, stack: e.stack }
+                    });
                 }
             })();
         """.trimIndent()
         
         val result = browser.evaluateJavascript(script)
+        logAndSend("debug", TAG, "JavaScript extraction result (raw): ${result?.take(500)}")
         
         return try {
-            if (result.isNullOrEmpty() || result == "null" || result == "[]") {
+            if (result.isNullOrEmpty() || result == "null") {
+                logAndSend("warn", TAG, "JavaScript returned null or empty result")
                 emptyList()
             } else {
-                // Parse JSON array properly
+                // Parse JSON properly
                 val cleanResult = result.trim()
                     .removePrefix("\"")
                     .removeSuffix("\"")
                     .replace("\\\"", "\"")
                     .replace("\\n", "\n")
+                    .replace("\\\\", "\\")
                 
-                if (cleanResult.startsWith("[") && cleanResult.endsWith("]")) {
-                    // Use JSON parser for proper array parsing
+                logAndSend("debug", TAG, "JavaScript result (cleaned): ${cleanResult.take(500)}")
+                
+                // Try to parse as object with links and debug
+                if (cleanResult.startsWith("{") && cleanResult.contains("\"links\"")) {
+                    val jsonObject = org.json.JSONObject(cleanResult)
+                    val linksArray = jsonObject.getJSONArray("links")
+                    val debugInfo = jsonObject.optJSONObject("debug")
+                    
+                    if (debugInfo != null) {
+                        val totalLinks = debugInfo.optInt("totalLinksFound", 0)
+                        val iframes = debugInfo.optInt("iframesFound", 0)
+                        val linksAfterFilter = debugInfo.optInt("linksAfterFilter", 0)
+                        logAndSend("info", TAG, "JavaScript debug: totalLinks=$totalLinks, iframes=$iframes, linksAfterFilter=$linksAfterFilter")
+                        
+                        // Log sample links
+                        val sampleLinks = debugInfo.optJSONArray("sampleLinks")
+                        if (sampleLinks != null && sampleLinks.length() > 0) {
+                            val sampleList = mutableListOf<String>()
+                            for (i in 0 until minOf(sampleLinks.length(), 5)) {
+                                sampleList.add(sampleLinks.getString(i))
+                            }
+                            logAndSend("info", TAG, "Sample links found: ${sampleList.joinToString(", ")}")
+                        }
+                        
+                        // Log filtered links with reasons
+                        val filteredLinks = debugInfo.optJSONArray("filteredLinks")
+                        if (filteredLinks != null && filteredLinks.length() > 0) {
+                            val filteredList = mutableListOf<String>()
+                            for (i in 0 until minOf(filteredLinks.length(), 5)) {
+                                val filtered = filteredLinks.getJSONObject(i)
+                                val url = filtered.optString("url", "").take(80)
+                                val reason = filtered.optString("reason", "unknown")
+                                filteredList.add("$url ($reason)")
+                            }
+                            logAndSend("info", TAG, "Sample filtered links: ${filteredList.joinToString("; ")}")
+                        }
+                    }
+                    
+                    val links = mutableListOf<String>()
+                    for (i in 0 until linksArray.length()) {
+                        val value = linksArray.getString(i)
+                        if (value.isNotEmpty() && value.startsWith("http")) {
+                            links.add(value)
+                        }
+                    }
+                    logAndSend("info", TAG, "Extracted ${links.size} links from JavaScript")
+                    links
+                } else if (cleanResult.startsWith("[") && cleanResult.endsWith("]")) {
+                    // Fallback: parse as simple array
                     val jsonArray = org.json.JSONArray(cleanResult)
                     val links = mutableListOf<String>()
                     for (i in 0 until jsonArray.length()) {
-                        val link = jsonArray.getString(i)
-                        if (link.isNotEmpty() && link.startsWith("http")) {
-                            links.add(link)
+                        val value = jsonArray.getString(i)
+                        if (value.isNotEmpty() && value.startsWith("http")) {
+                            links.add(value)
                         }
                     }
-                    Log.d(TAG, "Extracted ${links.size} links from page (before filtering)")
+                    logAndSend("info", TAG, "Extracted ${links.size} links from JavaScript (simple array)")
                     links
                 } else {
+                    logAndSend("warn", TAG, "JavaScript result doesn't match expected format: ${cleanResult.take(200)}")
                     emptyList()
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse page links: ${e.message}")
+            logAndSend("error", TAG, "Failed to parse JavaScript result: ${e.message}")
+            Log.e(TAG, "Failed to parse JavaScript result: ${e.message}", e)
             emptyList()
         }
     }
