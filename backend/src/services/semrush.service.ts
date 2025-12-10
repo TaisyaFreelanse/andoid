@@ -51,22 +51,68 @@ export class SemrushService {
       let data: any;
 
       if (this.useRapidApi) {
-        // RapidAPI format - try standard Semrush API format with RapidAPI headers
-        // RapidAPI Semrush8 usually uses the same endpoint format as standard API
-        const url = `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`;
+        // RapidAPI format - based on Semrush API documentation
+        // Standard Semrush API format: /?type=domain_ranks&domain=...&export_columns=...
+        // For RapidAPI, we use the same format but with RapidAPI headers instead of key parameter
+        // Note: RapidAPI might wrap the standard Semrush API, so we try standard format first
+        const endpoints = [
+          // Standard Semrush API format (most likely for RapidAPI wrapper)
+          `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num&database=us`,
+          // Alternative format without database
+          `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`,
+          // REST-style endpoint (less likely but possible)
+          `${this.baseUrl}/domain_ranks?domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`,
+        ];
         
-        response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'X-RapidAPI-Key': this.rapidApiKey,
-            'X-RapidAPI-Host': this.rapidApiHost,
-          },
-        });
+        let lastError: Error | null = null;
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          logger.error({ status: response.status, statusText: response.statusText, errorText, domain }, 'RapidAPI error');
-          throw new Error(`Semrush RapidAPI error: ${response.status} ${response.statusText}`);
+        for (const url of endpoints) {
+          try {
+            response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'X-RapidAPI-Key': this.rapidApiKey,
+                'X-RapidAPI-Host': this.rapidApiHost,
+              },
+            });
+            
+            if (response.ok) {
+              break; // Success, exit loop
+            }
+            
+            if (response.status === 404) {
+              // Try next endpoint
+              const errorText = await response.text().catch(() => '');
+              lastError = new Error(`Endpoint not found: ${url}`);
+              logger.debug({ url, status: response.status, errorText }, 'Trying next endpoint');
+              continue;
+            }
+            
+            // For rate limit (429), log but don't fail immediately - might be temporary
+            if (response.status === 429) {
+              const errorText = await response.text().catch(() => '');
+              logger.warn({ status: response.status, domain, url, errorText }, 'RapidAPI rate limit hit');
+              throw new Error(`Semrush RapidAPI rate limit: ${response.status} ${response.statusText}`);
+            }
+            
+            // For other errors (500, etc), throw immediately
+            const errorText = await response.text().catch(() => '');
+            logger.error({ status: response.status, statusText: response.statusText, errorText, domain, url }, 'RapidAPI error');
+            throw new Error(`Semrush RapidAPI error: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`);
+          } catch (err: any) {
+            if (err.message && err.message.includes('Endpoint not found')) {
+              lastError = err;
+              continue;
+            }
+            throw err;
+          }
+        }
+        
+        if (!response || !response.ok) {
+          if (lastError) {
+            throw lastError;
+          }
+          throw new Error('All RapidAPI endpoints failed');
         }
 
         const responseText = await response.text();

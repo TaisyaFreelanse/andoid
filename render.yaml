@@ -52,6 +52,10 @@ services:
         value: screenshots
       - key: SEMRUSH_API_KEY
         sync: false  # Настроить вручную
+      - key: SEMRUSH_RAPIDAPI_KEY
+        sync: false  # Настроить вручную (RapidAPI key)
+      - key: SEMRUSH_USE_RAPIDAPI
+        value: "true"  # Use RapidAPI instead of standard API
       - key: CORS_ORIGIN
         value: https://android-automation-frontend.onrender.com
       - key: LOG_LEVEL
