@@ -47,7 +47,7 @@ export class SemrushService {
     }
 
     try {
-      let response: Response;
+      let response: Response | null = null;
       let data: any;
 
       if (this.useRapidApi) {
@@ -68,13 +68,15 @@ export class SemrushService {
         
         for (const url of endpoints) {
           try {
-            response = await fetch(url, {
+            const currentResponse = await fetch(url, {
               method: 'GET',
               headers: {
                 'X-RapidAPI-Key': this.rapidApiKey,
                 'X-RapidAPI-Host': this.rapidApiHost,
               },
             });
+            
+            response = currentResponse;
             
             if (response.ok) {
               break; // Success, exit loop
@@ -85,6 +87,7 @@ export class SemrushService {
               const errorText = await response.text().catch(() => '');
               lastError = new Error(`Endpoint not found: ${url}`);
               logger.debug({ url, status: response.status, errorText }, 'Trying next endpoint');
+              response = null; // Reset for next iteration
               continue;
             }
             
@@ -102,6 +105,7 @@ export class SemrushService {
           } catch (err: any) {
             if (err.message && err.message.includes('Endpoint not found')) {
               lastError = err;
+              response = null; // Reset for next iteration
               continue;
             }
             throw err;
@@ -115,6 +119,12 @@ export class SemrushService {
           throw new Error('All RapidAPI endpoints failed');
         }
 
+        // At this point, response is guaranteed to be non-null and ok
+        // TypeScript needs explicit check to narrow the type
+        if (!response) {
+          throw new Error('Response is null after endpoint attempts');
+        }
+        
         const responseText = await response.text();
         
         // RapidAPI might return JSON or CSV
