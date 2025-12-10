@@ -144,11 +144,11 @@ export class SemrushService {
         throw new Error('Invalid Semrush API response');
       }
 
-      const headers = lines[0].split(';').map(h => h.trim());
-      const values = lines[1].split(';').map(v => v.trim());
+      const headers = lines[0].split(';').map((h: string) => h.trim());
+      const values = lines[1].split(';').map((v: string) => v.trim());
       
       const result: any = {};
-      headers.forEach((header, index) => {
+      headers.forEach((header: string, index: number) => {
         const value = values[index];
         
         if (value && !isNaN(Number(value))) {

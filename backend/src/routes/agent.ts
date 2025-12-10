@@ -4,7 +4,6 @@ import { prisma } from '../server';
 import { registerDeviceSchema, heartbeatSchema, taskResultSchema } from '../utils/validator';
 import { logger } from '../utils/logger';
 import { storageService } from '../services/storage.service';
-import { semrushService } from '../services/semrush.service';
 import { broadcastLog } from './logs';
 import { domainCheckerService } from '../services/domain-checker.service';
 
@@ -765,5 +764,57 @@ export async function agentRoutes(fastify: FastifyInstance) {
     broadcastLog(`[${tag}] ${message}`, level);
 
     return reply.send({ success: true });
+  });
+
+  // Test endpoint for domain checking
+  fastify.post('/test/domain-check', async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = request.body as { domain?: string; domains?: string[] };
+    
+    if (!body.domain && (!body.domains || body.domains.length === 0)) {
+      return reply.status(400).send({
+        error: {
+          message: 'Missing domain or domains array',
+          code: 'MISSING_DOMAIN',
+        },
+      });
+    }
+
+    try {
+      const domainsToCheck = body.domains || (body.domain ? [body.domain] : []);
+      
+      logger.info({ domains: domainsToCheck }, 'Testing domain check via API');
+      
+      const results = await domainCheckerService.checkDomains(domainsToCheck);
+      
+      const formattedResults = Array.from(results.entries()).map(([domain, result]) => ({
+        domain,
+        isValid: result?.isValid || false,
+        exists: result?.exists || false,
+        metrics: result?.metrics || null,
+        source: result?.source || null,
+        error: result?.error || null,
+      }));
+
+      return {
+        success: true,
+        results: formattedResults,
+        summary: {
+          total: domainsToCheck.length,
+          valid: formattedResults.filter(r => r.isValid).length,
+          invalid: formattedResults.filter(r => !r.isValid).length,
+          exists: formattedResults.filter(r => r.exists).length,
+          withMetrics: formattedResults.filter(r => r.metrics && (r.metrics.domainRank || r.metrics.organicKeywords || r.metrics.backlinks)).length,
+        },
+      };
+    } catch (error: any) {
+      logger.error({ error, body }, 'Error testing domain check');
+      return reply.status(500).send({
+        error: {
+          message: 'Error checking domains',
+          code: 'CHECK_ERROR',
+          details: error.message,
+        },
+      });
+    }
   });
 }

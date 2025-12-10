@@ -203,7 +203,7 @@ export class DomainCheckerService {
         throw new Error(`Ahrefs API error: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       
       if (!data || !data.metrics) {
         return {
@@ -214,7 +214,12 @@ export class DomainCheckerService {
         };
       }
 
-      const metrics = data.metrics;
+      const metrics = data.metrics as {
+        domain_rating?: number;
+        organic_keywords?: number;
+        organic_traffic?: number;
+        backlinks?: number;
+      };
       return {
         domain,
         isValid: true,
