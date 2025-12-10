@@ -11,6 +11,7 @@ import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
 import com.automation.agent.services.UniquenessService
 import com.automation.agent.utils.GeoLocationHelper
+import com.automation.agent.utils.LogSender
 import com.automation.agent.utils.RootUtils
 import kotlinx.coroutines.*
 import java.util.concurrent.ConcurrentHashMap
@@ -33,6 +34,24 @@ class TaskExecutor(
     
     fun setDeviceId(id: String) {
         deviceId = id
+        logSender.setDeviceId(id)
+        logSender.setTaskId(null) // Reset task ID when device changes
+    }
+    
+    /**
+     * Helper function to log and send to backend
+     */
+    private fun logAndSend(level: String, tag: String, message: String) {
+        // Log locally
+        when (level.lowercase()) {
+            "error", "e" -> Log.e(tag, message)
+            "warn", "w" -> Log.w(tag, message)
+            "debug", "d" -> Log.d(tag, message)
+            else -> Log.i(tag, message)
+        }
+        
+        // Send to backend
+        logSender.log(level, tag, message, currentTaskId)
     }
     companion object {
         private const val TAG = "TaskExecutor"
@@ -71,6 +90,9 @@ class TaskExecutor(
     private val uniquenessService = UniquenessService(context, rootUtils)
     private val geoLocationHelper = GeoLocationHelper()
     
+    // Log sender for sending logs to backend
+    private val logSender = LogSender(apiClient, deviceId)
+    
     // Callbacks
     var onStepStarted: ((String, TaskStep) -> Unit)? = null
     var onStepCompleted: ((String, TaskStep, StepResult) -> Unit)? = null
@@ -90,8 +112,9 @@ class TaskExecutor(
 
         currentTaskId = task.id
         executionResults.clear()
+        logSender.setTaskId(task.id)
         
-        Log.i(TAG, "Starting task: ${task.id} (${task.name})")
+        logAndSend("info", TAG, "Starting task: ${task.id} (${task.name})")
         
         try {
             // Update task status to "running"
@@ -449,15 +472,38 @@ class TaskExecutor(
                 
                 // Log all found links before parsing
                 if (allPageLinks.isNotEmpty()) {
-                    Log.d(TAG, "=== ALL PAGE LINKS FOUND (${allPageLinks.size}) ===")
-                    allPageLinks.take(20).forEachIndexed { index, link ->
-                        Log.d(TAG, "  [$index] $link")
+                    logAndSend("info", TAG, "=== ALL PAGE LINKS FOUND (${allPageLinks.size}) ===")
+                    allPageLinks.take(30).forEachIndexed { index, link ->
+                        // Check if link contains adurl or is external
+                        val isExternal = try {
+                            if (currentDomain.isNotEmpty()) {
+                                val linkDomain = java.net.URL(link).host
+                                linkDomain != currentDomain && !linkDomain.contains(currentDomain) && !currentDomain.contains(linkDomain)
+                            } else {
+                                true
+                            }
+                        } catch (e: Exception) {
+                            true
+                        }
+                        val hasAdUrl = link.contains("adurl", ignoreCase = true)
+                        val marker = when {
+                            hasAdUrl -> " [HAS ADURL]"
+                            isExternal -> " [EXTERNAL]"
+                            else -> ""
+                        }
+                        logAndSend("info", TAG, "  [$index] $link$marker")
                     }
-                    if (allPageLinks.size > 20) {
-                        Log.d(TAG, "  ... and ${allPageLinks.size - 20} more")
+                    if (allPageLinks.size > 30) {
+                        logAndSend("info", TAG, "  ... and ${allPageLinks.size - 30} more")
                     }
+                } else {
+                    logAndSend("warn", TAG, "⚠️ No page links found! This might indicate:")
+                    logAndSend("warn", TAG, "  1. Page hasn't loaded yet")
+                    logAndSend("warn", TAG, "  2. JavaScript extraction failed")
+                    logAndSend("warn", TAG, "  3. All links are filtered out")
                 }
                 
+                // First, try to parse adurl from links
                 val pageAdUrls = allPageLinks.mapNotNull { link ->
                     val adUrl = parser.parseAdUrl(link)
                     if (adUrl != null) {
@@ -465,7 +511,7 @@ class TaskExecutor(
                             try {
                                 val adDomain = java.net.URL(adUrl).host
                                 if (adDomain != currentDomain && !adDomain.contains(currentDomain) && !currentDomain.contains(adDomain)) {
-                                    Log.d(TAG, "✓ Found adUrl from page link: $adUrl (from: $link)")
+                                    logAndSend("info", TAG, "✓ Found adUrl from page link: $adUrl (from: $link)")
                                     adUrl
                                 } else {
                                     Log.d(TAG, "✗ Filtered out adUrl (same domain): $adUrl (domain: $adDomain, current: $currentDomain)")
@@ -473,7 +519,7 @@ class TaskExecutor(
                                 }
                             } catch (e: Exception) {
                                 if (adUrl != currentUrl) {
-                                    Log.d(TAG, "✓ Found adUrl from page link (parsing error): $adUrl (from: $link)")
+                                    Log.i(TAG, "✓ Found adUrl from page link (parsing error): $adUrl (from: $link)")
                                     adUrl
                                 } else {
                                     Log.d(TAG, "✗ Filtered out adUrl (same as current URL): $adUrl")
@@ -481,7 +527,7 @@ class TaskExecutor(
                                 }
                             }
                         } else {
-                            Log.d(TAG, "✓ Found adUrl from page link (no domain check): $adUrl (from: $link)")
+                            Log.i(TAG, "✓ Found adUrl from page link (no domain check): $adUrl (from: $link)")
                             adUrl
                         }
                     } else {
@@ -492,6 +538,85 @@ class TaskExecutor(
                         null
                     }
                 }.filterNotNull()
+                
+                // Also, extract links that are near iframes - they might be direct ad URLs (without adurl parameter)
+                // This handles cases where ad URL is directly in href, not in adurl parameter
+                // JavaScript already finds these in extractAllPageLinks, but we need to check them here
+                // IMPORTANT: If a link is external and near an iframe, it's likely a direct ad URL
+                val directExternalUrls = allPageLinks.mapNotNull { link ->
+                    // Check if link is external (different domain) and not already parsed
+                    val alreadyParsed = pageAdUrls.any { it == link }
+                    if (alreadyParsed) {
+                        null
+                    } else if (currentDomain.isNotEmpty()) {
+                        try {
+                            val linkDomain = java.net.URL(link).host
+                            val isExternal = linkDomain != currentDomain && 
+                                           !linkDomain.contains(currentDomain) && 
+                                           !currentDomain.contains(linkDomain)
+                            
+                            // Exclude ad network domains
+                            val isAdNetwork = linkDomain.contains("googlesyndication") || 
+                                            linkDomain.contains("doubleclick") ||
+                                            linkDomain.contains("googleadservices") ||
+                                            linkDomain.contains("pagead") ||
+                                            linkDomain.contains("adservice") ||
+                                            (linkDomain.contains("google.com") && !linkDomain.contains("googleusercontent"))
+                            
+                            // If external and not ad network, and link was found near iframe (JavaScript already filtered this)
+                            // Then it's likely a direct ad URL - add it!
+                            if (isExternal && !isAdNetwork && link.startsWith("http")) {
+                                logAndSend("info", TAG, "✓ Found external link near iframe (direct ad URL): $link (domain: $linkDomain)")
+                                link
+                            } else {
+                                null
+                            }
+                        } catch (e: Exception) {
+                            // If URL parsing fails, but link is external-looking, might still be ad URL
+                            if (link.startsWith("http") && !link.contains("pickuplineinsider.com")) {
+                                logAndSend("info", TAG, "? Found external-looking link (parsing error, might be ad URL): $link")
+                                link
+                            } else {
+                                null
+                            }
+                        }
+                    } else {
+                        // No domain to check - be more permissive
+                        if (link.startsWith("http") && !link.contains("googlesyndication") && 
+                            !link.contains("doubleclick") && !link.contains("pagead")) {
+                            logAndSend("info", TAG, "? Found link (no domain check, might be ad URL): $link")
+                            link
+                        } else {
+                            null
+                        }
+                    }
+                }.filterNotNull()
+                
+                logAndSend("info", TAG, "Found ${directExternalUrls.size} external links near iframes (added as direct ad URLs)")
+                
+                // DEBUG: Log all external links found, even if not near iframe (for debugging)
+                if (allPageLinks.isNotEmpty() && currentDomain.isNotEmpty()) {
+                    val allExternalLinks = allPageLinks.filter { link ->
+                        try {
+                            val linkDomain = java.net.URL(link).host
+                            val isExternal = linkDomain != currentDomain && 
+                                           !linkDomain.contains(currentDomain) && 
+                                           !currentDomain.contains(linkDomain)
+                            val isAdNetwork = linkDomain.contains("googlesyndication") || 
+                                            linkDomain.contains("doubleclick") ||
+                                            linkDomain.contains("googleadservices") ||
+                                            linkDomain.contains("pagead") ||
+                                            linkDomain.contains("adservice")
+                            isExternal && !isAdNetwork && link.startsWith("http")
+                        } catch (e: Exception) {
+                            false
+                        }
+                    }
+                    logAndSend("debug", TAG, "DEBUG: Found ${allExternalLinks.size} total external links on page (not filtered by iframe proximity)")
+                    if (allExternalLinks.isNotEmpty() && allExternalLinks.size <= 20) {
+                        logAndSend("debug", TAG, "DEBUG: All external links: ${allExternalLinks.joinToString(", ")}")
+                    }
+                }
                 
                 // Get intercepted ad URLs from network requests (passive method - no clicks)
                 val interceptedAdUrls = try {
@@ -524,7 +649,7 @@ class TaskExecutor(
                 }
                 Log.d(TAG, "Extracted ${iframeAdUrls.size} ad URLs from iframe content")
                 
-                Log.d(TAG, "Parsed adUrls: ${adUrls.size}, directAdUrls: ${directAdUrls.size}, pageAdUrls: ${pageAdUrls.size}, interceptedAdUrls: ${interceptedAdUrls.size}, iframeAdUrls: ${iframeAdUrls.size}")
+                Log.d(TAG, "Parsed adUrls: ${adUrls.size}, directAdUrls: ${directAdUrls.size}, pageAdUrls: ${pageAdUrls.size}, interceptedAdUrls: ${interceptedAdUrls.size}, iframeAdUrls: ${iframeAdUrls.size}, directExternalUrls: ${directExternalUrls.size}")
                 Log.d(TAG, "Results to parse: ${results.size} links")
                 if (results.isNotEmpty()) {
                     Log.d(TAG, "First few results: ${results.take(3)}")
@@ -539,19 +664,33 @@ class TaskExecutor(
                     Log.d(TAG, "Sample iframeAdUrls: ${iframeAdUrls.take(3)}")
                 }
                 
-                val allAdUrls = (adUrls + directAdUrls + pageAdUrls + interceptedAdUrls + iframeAdUrls).distinct()
+                val allAdUrls = (adUrls + directAdUrls + pageAdUrls + interceptedAdUrls + iframeAdUrls + directExternalUrls).distinct()
                 
-                Log.i(TAG, "=== AD URL EXTRACTION SUMMARY ===")
-                Log.i(TAG, "Total unique adUrls extracted: ${allAdUrls.size}")
-                Log.i(TAG, "Breakdown: parsed=${adUrls.size}, direct=${directAdUrls.size}, page=${pageAdUrls.size}, intercepted=${interceptedAdUrls.size}, iframe=${iframeAdUrls.size}")
+                logAndSend("info", TAG, "=== AD URL EXTRACTION SUMMARY ===")
+                logAndSend("info", TAG, "Total unique adUrls extracted: ${allAdUrls.size}")
+                logAndSend("info", TAG, "Breakdown: parsed=${adUrls.size}, direct=${directAdUrls.size}, page=${pageAdUrls.size}, intercepted=${interceptedAdUrls.size}, iframe=${iframeAdUrls.size}, external=${directExternalUrls.size}")
                 if (allAdUrls.isNotEmpty()) {
-                    Log.i(TAG, "Sample adUrls: ${allAdUrls.take(5)}")
+                    logAndSend("info", TAG, "Sample adUrls (first 10): ${allAdUrls.take(10).joinToString(", ")}")
                 } else {
-                    Log.w(TAG, "WARNING: No ad URLs extracted! This might indicate:")
-                    Log.w(TAG, "  1. Ad URLs are not in DOM (they're generated dynamically on click)")
-                    Log.w(TAG, "  2. Ad URLs are inside iframe with different origin (same-origin policy)")
-                    Log.w(TAG, "  3. Ad URLs are in JavaScript event handlers that we haven't extracted yet")
-                    Log.w(TAG, "  4. Need to wait longer for ads to load")
+                    logAndSend("warn", TAG, "⚠️ NO AD URLS FOUND!")
+                    logAndSend("warn", TAG, "  - Total page links found: ${allPageLinks.size}")
+                    logAndSend("warn", TAG, "  - Links with adurl param: ${allPageLinks.count { it.contains("adurl", ignoreCase = true) }}")
+                    logAndSend("warn", TAG, "  - External links: ${allPageLinks.count { link ->
+                        try {
+                            if (currentDomain.isNotEmpty()) {
+                                val linkDomain = java.net.URL(link).host
+                                linkDomain != currentDomain && !linkDomain.contains(currentDomain) && !currentDomain.contains(linkDomain)
+                            } else false
+                        } catch (e: Exception) { false }
+                    }}")
+                    if (allPageLinks.isNotEmpty()) {
+                        logAndSend("warn", TAG, "  - Sample page links (first 5): ${allPageLinks.take(5).joinToString(", ")}")
+                    }
+                    logAndSend("warn", TAG, "Possible reasons:")
+                    logAndSend("warn", TAG, "  1. Ad URLs are not in DOM (they're generated dynamically on click)")
+                    logAndSend("warn", TAG, "  2. Ad URLs are inside iframe with different origin (same-origin policy)")
+                    logAndSend("warn", TAG, "  3. Ad URLs are in JavaScript event handlers that we haven't extracted yet")
+                    logAndSend("warn", TAG, "  4. Need to wait longer for ads to load")
                 }
                 
                 val existingAdUrls = executionResults["ad_urls"] as? MutableList<String> ?: mutableListOf()
@@ -1329,36 +1468,92 @@ class TaskExecutor(
                     var allLinksOnPage = document.querySelectorAll('a[href]');
                     allLinksOnPage.forEach(function(a) {
                         try {
-                            // Get computed style to check if visible
-                            var style = window.getComputedStyle(a);
-                            var isVisible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-                            
-                            // Include all links, even hidden ones (they might be the ones we need)
                             var href = a.href || a.getAttribute('href') || '';
                             if (href && href.startsWith('http')) {
-                                // Check if this link is near an ad iframe
+                                // Check if this link is near an ad iframe or overlaps with it
                                 var linkRect = a.getBoundingClientRect();
                                 var nearAd = false;
+                                var overlapsAd = false;
                                 
                                 iframes.forEach(function(iframe) {
                                     try {
                                         var iframeRect = iframe.getBoundingClientRect();
-                                        // Check if link is within 50px of iframe
+                                        
+                                        // Check if link overlaps with iframe (like browser does for context menu)
+                                        var overlaps = !(linkRect.right < iframeRect.left || 
+                                                        linkRect.left > iframeRect.right || 
+                                                        linkRect.bottom < iframeRect.top || 
+                                                        linkRect.top > iframeRect.bottom);
+                                        
+                                        if (overlaps) {
+                                            overlapsAd = true;
+                                        }
+                                        
+                                        // Check if link is within 100px of iframe (broader search)
+                                        var centerX = (linkRect.left + linkRect.right) / 2;
+                                        var centerY = (linkRect.top + linkRect.bottom) / 2;
+                                        var iframeCenterX = (iframeRect.left + iframeRect.right) / 2;
+                                        var iframeCenterY = (iframeRect.top + iframeRect.bottom) / 2;
                                         var distance = Math.sqrt(
-                                            Math.pow(linkRect.left - iframeRect.left, 2) + 
-                                            Math.pow(linkRect.top - iframeRect.top, 2)
+                                            Math.pow(centerX - iframeCenterX, 2) + 
+                                            Math.pow(centerY - iframeCenterY, 2)
                                         );
-                                        if (distance < 50) {
+                                        if (distance < 100) {
                                             nearAd = true;
                                         }
                                     } catch(e) {}
                                 });
                                 
-                                // Include if it's near an ad or contains ad-related keywords
-                                if (nearAd || href.includes('adurl') || href.includes('googleads') || 
+                                // Include if it overlaps with ad, is near ad, or contains ad-related keywords
+                                // CRITICAL: If link overlaps or is near iframe, it's likely an ad link (like "copy link address" in browser)
+                                if (overlapsAd || nearAd || href.includes('adurl') || href.includes('googleads') || 
                                     href.includes('doubleclick') || href.includes('googlesyndication')) {
                                     if (shouldIncludeUrl(href)) {
                                         links.push(href.trim());
+                                    }
+                                } else {
+                                    // Also check if it's an external link (might be ad URL without adurl parameter)
+                                    try {
+                                        var urlObj = new URL(href);
+                                        var hostname = urlObj.hostname;
+                                        // If it's external and not from ad network, might be ad URL
+                                        if (excludeHost && hostname !== excludeHost && 
+                                            !hostname.includes(excludeHost) && !excludeHost.includes(hostname) &&
+                                            !hostname.includes('googlesyndication') && 
+                                            !hostname.includes('doubleclick') &&
+                                            !hostname.includes('googleadservices') &&
+                                            !hostname.includes('pagead') &&
+                                            !hostname.includes('adservice')) {
+                                            // Check if link is in a container that might be an ad OR if it's visually near an iframe
+                                            var parent = a.parentElement;
+                                            var depth = 0;
+                                            var inAdContainer = false;
+                                            while (parent && depth < 5) {
+                                                var className = parent.className || '';
+                                                var id = parent.id || '';
+                                                if (className.includes('ad') || id.includes('ad') || 
+                                                    className.includes('ads') || id.includes('ads') ||
+                                                    parent.tagName === 'INS' && parent.classList.contains('adsbygoogle')) {
+                                                    inAdContainer = true;
+                                                    break;
+                                                }
+                                                parent = parent.parentElement;
+                                                depth++;
+                                            }
+                                            // If in ad container OR near iframe (already checked above), include it
+                                            if ((inAdContainer || nearAd || overlapsAd) && shouldIncludeUrl(href)) {
+                                                links.push(href.trim());
+                                            }
+                                        }
+                                    } catch(e) {
+                                        // If URL parsing fails but link looks external, might still be ad URL
+                                        if (href.startsWith('http') && excludeHost && !href.includes(excludeHost) &&
+                                            !href.includes('googlesyndication') && !href.includes('doubleclick') &&
+                                            !href.includes('pagead') && (nearAd || overlapsAd)) {
+                                            if (shouldIncludeUrl(href)) {
+                                                links.push(href.trim());
+                                            }
+                                        }
                                     }
                                 }
                             }

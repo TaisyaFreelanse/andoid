@@ -587,4 +587,59 @@ export async function agentRoutes(fastify: FastifyInstance) {
       });
     }
   });
+
+  // Logs endpoint - receive logs from Android Agent
+  fastify.post('/logs', async (request: FastifyRequest, reply: FastifyReply) => {
+    const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;
+    const body = request.body as { 
+      level?: string; 
+      tag?: string; 
+      message?: string; 
+      taskId?: string;
+      timestamp?: number;
+    };
+
+    if (!deviceId) {
+      return reply.status(401).send({
+        error: { message: 'Missing device ID', code: 'MISSING_DEVICE_ID' },
+      });
+    }
+
+    const level = body.level?.toLowerCase() || 'info';
+    const tag = body.tag || 'AndroidAgent';
+    const message = body.message || '';
+    const taskId = body.taskId;
+
+    // Log to backend logger
+    const logData = {
+      deviceId,
+      taskId,
+      tag,
+      message,
+      timestamp: body.timestamp || Date.now(),
+    };
+
+    // Use appropriate log level
+    switch (level) {
+      case 'error':
+      case 'e':
+        logger.error(logData, `[${tag}] ${message}`);
+        break;
+      case 'warn':
+      case 'w':
+        logger.warn(logData, `[${tag}] ${message}`);
+        break;
+      case 'debug':
+      case 'd':
+        logger.debug(logData, `[${tag}] ${message}`);
+        break;
+      default:
+        logger.info(logData, `[${tag}] ${message}`);
+    }
+
+    // Broadcast to WebSocket clients
+    broadcastLog(`[${tag}] ${message}`, level);
+
+    return reply.send({ success: true });
+  });
 }

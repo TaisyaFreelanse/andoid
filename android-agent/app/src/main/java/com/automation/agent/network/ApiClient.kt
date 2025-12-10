@@ -348,6 +348,43 @@ class ApiClient(
     }
 
     /**
+     * Send log to backend
+     */
+    suspend fun sendLog(
+        level: String,
+        tag: String,
+        message: String,
+        taskId: String? = null
+    ): Boolean {
+        val deviceId = storedDeviceId ?: return false
+        
+        val logData = mapOf(
+            "level" to level,
+            "tag" to tag,
+            "message" to message,
+            "taskId" to (taskId ?: ""),
+            "timestamp" to System.currentTimeMillis()
+        )
+        
+        val json = gson.toJson(logData)
+        val body = json.toRequestBody("application/json".toMediaType())
+        
+        val request = Request.Builder()
+            .url("$baseUrl/api/agent/logs")
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("X-Device-Id", deviceId)
+            .apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }
+            .build()
+
+        return executeRequest(request) { response ->
+            response.isSuccessful
+        } ?: false
+    }
+
+    /**
      * Execute HTTP request with error handling
      */
     private suspend fun <T> executeRequest(
