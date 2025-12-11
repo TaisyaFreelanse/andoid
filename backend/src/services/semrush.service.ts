@@ -56,11 +56,15 @@ export class SemrushService {
         // For RapidAPI, we use the same format but with RapidAPI headers instead of key parameter
         // Note: RapidAPI might wrap the standard Semrush API, so we try standard format first
         const endpoints = [
-          // Standard Semrush API format (most likely for RapidAPI wrapper)
+          // Try RapidAPI specific format - might be different from standard Semrush
+          `${this.baseUrl}/domain_ranks?domain=${encodeURIComponent(domain)}`,
+          // Standard Semrush API format with database
           `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num&database=us`,
-          // Alternative format without database
+          // Standard Semrush API format without database
           `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`,
-          // REST-style endpoint (less likely but possible)
+          // Alternative with key parameter (though key is in headers)
+          `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num&key=${this.rapidApiKey}`,
+          // REST-style with full params
           `${this.baseUrl}/domain_ranks?domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`,
         ];
         
@@ -86,7 +90,7 @@ export class SemrushService {
               // Try next endpoint
               const errorText = await response.text().catch(() => '');
               lastError = new Error(`Endpoint not found: ${url}`);
-              logger.debug({ url, status: response.status, errorText }, 'Trying next endpoint');
+              logger.warn({ url, status: response.status, errorText: errorText.substring(0, 200), endpointIndex: endpoints.indexOf(url) + 1, totalEndpoints: endpoints.length }, 'Trying next endpoint');
               response = null; // Reset for next iteration
               continue;
             }
