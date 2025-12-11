@@ -266,6 +266,39 @@ export async function agentRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // Send log endpoint (for Android Agent)
+  fastify.post('/logs', async (request: FastifyRequest, reply: FastifyReply) => {
+    const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;
+    const body = request.body as { level?: string; tag?: string; message?: string; taskId?: string; timestamp?: number };
+    
+    if (!deviceId) {
+      return reply.status(400).send({
+        error: { message: 'Device ID required', code: 'DEVICE_ID_REQUIRED' },
+      });
+    }
+    
+    try {
+      // Broadcast log to WebSocket clients
+      const logMessage = `[${body.level?.toUpperCase() || 'INFO'}] ${body.tag || 'Unknown'}: ${body.message || ''}`;
+      broadcastLog(logMessage, body.level || 'info');
+      
+      logger.info({
+        deviceId,
+        level: body.level,
+        tag: body.tag,
+        message: body.message?.substring(0, 200), // Truncate long messages
+        taskId: body.taskId,
+      }, 'Log received from Android Agent');
+      
+      return { success: true };
+    } catch (error) {
+      logger.error({ error, deviceId }, 'Failed to process log from agent');
+      return reply.status(500).send({
+        error: { message: 'Failed to process log', code: 'LOG_PROCESSING_ERROR' },
+      });
+    }
+  });
+
   // Send task result endpoint (for Android Agent)
   fastify.post('/tasks/:taskId/result', async (request: FastifyRequest<{ Params: { taskId: string } }>, reply: FastifyReply) => {
     const deviceId = (request.headers['x-device-id'] || request.headers['deviceid']) as string;

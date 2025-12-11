@@ -18,8 +18,12 @@
     
     <!-- Root permissions (optional, for root operations) -->
     <uses-permission android:name="android.permission.ACCESS_SUPERUSER" tools:ignore="ProtectedPermissions" />
+    
+    <!-- Logcat reading (works on root devices) -->
+    <uses-permission android:name="android.permission.READ_LOGS" tools:ignore="ProtectedPermissions" />
 
     <application
+        android:name=".App"
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"

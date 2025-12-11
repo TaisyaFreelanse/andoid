@@ -18,7 +18,9 @@ import com.automation.agent.MainActivity
 import com.automation.agent.R
 import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
+import com.automation.agent.utils.AutoLogcatSender
 import com.automation.agent.utils.DeviceInfo
+import com.automation.agent.utils.LogInterceptor
 import com.automation.agent.utils.RootUtils
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
@@ -63,6 +65,7 @@ class ControllerService : LifecycleService() {
     private lateinit var taskExecutor: TaskExecutor
     private lateinit var uniquenessService: UniquenessService
     private lateinit var rootUtils: RootUtils
+    private var autoLogcatSender: AutoLogcatSender? = null
     
     private var deviceId: String? = null
     private val isRegistered = AtomicBoolean(false)
@@ -99,40 +102,139 @@ class ControllerService : LifecycleService() {
     private var connectionStatus = ConnectionStatus.DISCONNECTED
 
     override fun onCreate() {
-        super.onCreate()
+        try {
+            LogInterceptor.i(TAG, "ControllerService.onCreate() started")
+            super.onCreate()
+            LogInterceptor.i(TAG, "ControllerService super.onCreate() completed")
+            
+            // Register with Application for exception handling
+            try {
+                (application as? com.automation.agent.App)?.let { app ->
+                    Log.d(TAG, "Application instance found")
+                    // Will be set after apiClient is created
+                } ?: Log.w(TAG, "Application is not App instance")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to register with App: ${e.message}", e)
+            }
+            
+            // Initialize components step by step with error handling
+            Log.i(TAG, "Initializing SharedPreferences...")
+            prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            Log.i(TAG, "SharedPreferences initialized")
+            
+            Log.i(TAG, "Initializing DeviceInfo...")
+            deviceInfo = DeviceInfo(this)
+            Log.i(TAG, "DeviceInfo initialized")
+            
+            Log.i(TAG, "Initializing ProxyManager...")
+            proxyManager = ProxyManager()
+            Log.i(TAG, "ProxyManager initialized")
+            
+            Log.i(TAG, "Initializing ApiClient...")
+            apiClient = ApiClient(getBackendUrl(), proxyManager)
+            Log.i(TAG, "ApiClient initialized")
+            
+            // Initialize LogInterceptor for automatic log forwarding (works without root)
+            Log.i(TAG, "Initializing LogInterceptor...")
+            try {
+                LogInterceptor.init(apiClient, null)
+                Log.i(TAG, "LogInterceptor initialized - all logs will be forwarded to backend")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to initialize LogInterceptor: ${e.message}", e)
+            }
+            
+            // Initialize AutoLogcatSender for additional logcat reading (requires root)
+            Log.i(TAG, "Initializing AutoLogcatSender...")
+            try {
+                autoLogcatSender = AutoLogcatSender(apiClient, null)
+                // Add important tags to filter
+                autoLogcatSender?.addFilterTag("ControllerService")
+                autoLogcatSender?.addFilterTag("UniquenessService")
+                autoLogcatSender?.addFilterTag("TaskExecutor")
+                autoLogcatSender?.addFilterTag("App")
+                autoLogcatSender?.addFilterTag("MainActivity")
+                autoLogcatSender?.addFilterTag("AutoLogcatSender")
+                Log.i(TAG, "AutoLogcatSender initialized (will work on root devices)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to initialize AutoLogcatSender: ${e.message}", e)
+            }
+            
+            Log.i(TAG, "Initializing TaskExecutor...")
+            taskExecutor = TaskExecutor(this, apiClient, proxyManager)
+            Log.i(TAG, "TaskExecutor initialized")
+            
+            Log.i(TAG, "Initializing RootUtils...")
+            rootUtils = RootUtils()
+            Log.i(TAG, "RootUtils initialized")
+            
+            Log.i(TAG, "Initializing UniquenessService...")
+            try {
+                uniquenessService = UniquenessService(this, rootUtils)
+                Log.i(TAG, "UniquenessService initialized successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "CRITICAL: Failed to initialize UniquenessService: ${e.message}", e)
+                // Don't crash - set to null and handle later
+                throw e // Re-throw to prevent service from starting in broken state
+            }
         
-        // Initialize components
-        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        deviceInfo = DeviceInfo(this)
-        proxyManager = ProxyManager()
-        apiClient = ApiClient(getBackendUrl(), proxyManager)
-        taskExecutor = TaskExecutor(this, apiClient, proxyManager)
-        rootUtils = RootUtils()
-        uniquenessService = UniquenessService(this, rootUtils)
-        
-        // Setup task executor callbacks
-        setupTaskExecutorCallbacks()
-        
-        // Load saved device ID and token
-        deviceId = prefs.getString(KEY_DEVICE_ID, null)
-        isRegistered.set(prefs.getBoolean(KEY_IS_REGISTERED, false))
-        
-        // Set device ID in API client and TaskExecutor
-        deviceId?.let { 
-            apiClient.setDeviceId(it)
-            taskExecutor.setDeviceId(it)
+        // Register API client with Application
+        try {
+            (application as? com.automation.agent.App)?.setApiClient(apiClient)
+            // Also register with LogInterceptor and AutoLogcatSender
+            LogInterceptor.setApiClient(apiClient)
+            autoLogcatSender?.setApiClient(apiClient)
+            deviceId?.let { (application as? com.automation.agent.App)?.setDeviceId(it) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register API client: ${e.message}")
         }
         
-        // Load and set auth token
-        prefs.getString(KEY_AGENT_TOKEN, null)?.let { 
-            apiClient.setAuthToken(it) 
+            // Setup task executor callbacks
+            Log.i(TAG, "Setting up task executor callbacks...")
+            setupTaskExecutorCallbacks()
+            Log.i(TAG, "Task executor callbacks set up")
+            
+            // Load saved device ID and token
+            Log.i(TAG, "Loading saved device ID and token...")
+            deviceId = prefs.getString(KEY_DEVICE_ID, null)
+            isRegistered.set(prefs.getBoolean(KEY_IS_REGISTERED, false))
+            Log.i(TAG, "Device ID loaded: ${deviceId?.take(8)}..., isRegistered: ${isRegistered.get()}")
+            
+            // Set device ID in API client and TaskExecutor
+            deviceId?.let { 
+                apiClient.setDeviceId(it)
+                taskExecutor.setDeviceId(it)
+                Log.i(TAG, "Device ID set in API client and TaskExecutor")
+            }
+            
+            // Load and set auth token
+            prefs.getString(KEY_AGENT_TOKEN, null)?.let { 
+                apiClient.setAuthToken(it)
+                Log.i(TAG, "Auth token set in API client")
+            }
+            
+            // Create notification channel
+            Log.i(TAG, "Creating notification channel...")
+            createNotificationChannel()
+            Log.i(TAG, "Notification channel created")
+            
+            // Acquire wake lock to keep service running
+            Log.i(TAG, "Acquiring wake lock...")
+            acquireWakeLock()
+            Log.i(TAG, "Wake lock acquired")
+            
+            Log.i(TAG, "ControllerService.onCreate() completed successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "CRITICAL: Exception in ControllerService.onCreate(): ${e.message}", e)
+            e.printStackTrace()
+            // Try to send error to backend if possible
+            try {
+                safeSendLog("error", TAG, "CRITICAL: Service onCreate failed: ${e.message}\n${e.stackTraceToString().take(500)}")
+            } catch (logError: Exception) {
+                Log.w(TAG, "Failed to send error log: ${logError.message}")
+            }
+            // Re-throw to prevent service from starting in broken state
+            throw e
         }
-        
-        // Create notification channel
-        createNotificationChannel()
-        
-        // Acquire wake lock to keep service running
-        acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -142,6 +244,14 @@ class ControllerService : LifecycleService() {
         startForeground(NOTIFICATION_ID, createNotification("Запуск..."))
         
         if (!isRunning.getAndSet(true)) {
+            // Start AutoLogcatSender for automatic log forwarding
+            try {
+                autoLogcatSender?.start()
+                Log.i(TAG, "AutoLogcatSender started")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to start AutoLogcatSender: ${e.message}", e)
+            }
+            
             // Start registration and heartbeat
             lifecycleScope.launch {
                 startAgent()
@@ -157,6 +267,14 @@ class ControllerService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        // Stop AutoLogcatSender
+        try {
+            autoLogcatSender?.stop()
+            Log.i(TAG, "AutoLogcatSender stopped")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stop AutoLogcatSender: ${e.message}")
+        }
+        
         super.onDestroy()
         
         isRunning.set(false)
@@ -285,6 +403,17 @@ class ControllerService : LifecycleService() {
             apiClient.setDeviceId(response.deviceId)
             taskExecutor.setDeviceId(response.deviceId)
             
+            // Update LogInterceptor and AutoLogcatSender with device ID
+            LogInterceptor.setDeviceId(response.deviceId)
+            autoLogcatSender?.setDeviceId(response.deviceId)
+            
+            // Register device ID with Application for exception handling
+            try {
+                (application as? com.automation.agent.App)?.setDeviceId(response.deviceId)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to register device ID: ${e.message}")
+            }
+            
             // Set auth token in API client (prefer agentToken, fallback to token)
             val authToken = response.agentToken ?: response.token
             authToken?.let { apiClient.setAuthToken(it) }
@@ -340,23 +469,66 @@ class ControllerService : LifecycleService() {
             // Process tasks from heartbeat response
             response.tasks?.let { taskList ->
                 if (taskList.isNotEmpty()) {
-                    updateNotification("Получено задач: ${taskList.size}")
+                    Log.i(TAG, "Heartbeat received ${taskList.size} tasks")
+                    safeSendLog("info", TAG, "Heartbeat received ${taskList.size} tasks")
+                    try {
+                        updateNotification("Получено задач: ${taskList.size}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to update notification: ${e.message}")
+                    }
                     
-                    // Add new tasks to queue
+                    // Add new tasks to queue (accept both "pending" and "assigned" status)
                     taskList.forEach { task ->
-                        if (!pendingTasks.any { it.id == task.id }) {
-                            pendingTasks.add(task)
+                        try {
+                            Log.d(TAG, "Processing task: id=${task.id}, type=${task.type}, status=${task.status}")
+                            if (!pendingTasks.any { it.id == task.id }) {
+                                // Accept tasks with "pending" or "assigned" status
+                                if (task.status == "pending" || task.status == "assigned") {
+                                    pendingTasks.add(task)
+                                    Log.i(TAG, "Added task to queue: ${task.id} (${task.type}, status=${task.status})")
+                                    safeSendLog("info", TAG, "Added task to queue: ${task.id} (${task.type}, status=${task.status})")
+                                } else {
+                                    Log.d(TAG, "Skipping task ${task.id} with status: ${task.status}")
+                                }
+                            } else {
+                                Log.d(TAG, "Task ${task.id} already in queue")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing task ${task.id}: ${e.message}", e)
+                            safeSendLog("error", TAG, "Error processing task ${task.id}: ${e.message}")
                         }
                     }
                     
+                    Log.i(TAG, "Pending tasks count: ${pendingTasks.size}, isExecuting: ${taskExecutor.isExecutingTask()}")
+                    safeSendLog("info", TAG, "Pending tasks count: ${pendingTasks.size}, isExecuting: ${taskExecutor.isExecutingTask()}")
+                    
                     // Start executing if not already
                     if (!taskExecutor.isExecutingTask() && pendingTasks.isNotEmpty()) {
-                        executeNextTask()
+                        Log.i(TAG, "Starting task execution...")
+                        safeSendLog("info", TAG, "Starting task execution...")
+                        try {
+                            executeNextTask()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "CRITICAL: Error in executeNextTask: ${e.message}", e)
+                            safeSendLog("error", TAG, "CRITICAL: Error in executeNextTask: ${e.message}\n${e.stackTraceToString().take(500)}")
+                        }
+                    } else {
+                        Log.d(TAG, "Not starting task execution: isExecuting=${taskExecutor.isExecutingTask()}, pendingCount=${pendingTasks.size}")
                     }
                 } else {
-                    updateNotification("Подключено • Heartbeat OK")
+                    try {
+                        updateNotification("Подключено • Heartbeat OK")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to update notification: ${e.message}")
+                    }
                 }
-            } ?: updateNotification("Подключено • Heartbeat OK")
+            } ?: run {
+                try {
+                    updateNotification("Подключено • Heartbeat OK")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to update notification: ${e.message}")
+                }
+            }
         } else {
             throw Exception("Heartbeat failed")
         }
@@ -413,21 +585,82 @@ class ControllerService : LifecycleService() {
      * Execute next task from queue
      */
     private fun executeNextTask() {
-        if (taskExecutor.isExecutingTask() || pendingTasks.isEmpty()) {
+        LogInterceptor.i(TAG, "executeNextTask() called: isExecuting=${taskExecutor.isExecutingTask()}, pendingCount=${pendingTasks.size}")
+        
+        if (taskExecutor.isExecutingTask()) {
+            LogInterceptor.d(TAG, "Task executor is busy, skipping")
+            return
+        }
+        
+        if (pendingTasks.isEmpty()) {
+            LogInterceptor.d(TAG, "No pending tasks, skipping")
             return
         }
         
         val task = pendingTasks.removeAt(0)
+        LogInterceptor.i(TAG, "=== Starting task execution: ${task.id} (${task.type}, status=${task.status}) ===")
         
         taskExecutionJob = lifecycleScope.launch {
             try {
-                updateNotification("Выполнение задачи: ${task.name} (${task.type})")
+                LogInterceptor.i(TAG, "=== TASK EXECUTION COROUTINE STARTED ===")
+                LogInterceptor.i(TAG, "Task ID: ${task.id}, Type: ${task.type}, Name: ${task.name}")
+                
+                try {
+                    updateNotification("Выполнение задачи: ${task.name} (${task.type})")
+                } catch (e: Exception) {
+                    LogInterceptor.w(TAG, "Failed to update notification: ${e.message}")
+                }
+                
+                LogInterceptor.i(TAG, "Task execution coroutine started for: ${task.id}")
                 
                 // Handle different task types
                 when (task.type.lowercase()) {
                     "uniqueness" -> {
                         // Execute uniqueness task via UniquenessService
-                        executeUniquenessTask(task)
+                        // Execute directly in this coroutine with proper error handling
+                        LogInterceptor.i(TAG, "=== UNIQUENESS TASK DETECTED ===")
+                        LogInterceptor.i(TAG, "About to execute uniqueness task: ${task.id}")
+                        
+                        try {
+                            // Execute in IO dispatcher to prevent blocking main thread
+                            LogInterceptor.i(TAG, "Switching to IO dispatcher for uniqueness task...")
+                            withContext(Dispatchers.IO) {
+                                LogInterceptor.i(TAG, "=== IN IO DISPATCHER ===")
+                                LogInterceptor.i(TAG, "Executing uniqueness task in IO dispatcher: ${task.id}")
+                                executeUniquenessTask(task)
+                                LogInterceptor.i(TAG, "executeUniquenessTask returned successfully")
+                            }
+                            LogInterceptor.i(TAG, "Uniqueness task execution completed: ${task.id}")
+                        } catch (e: Exception) {
+                            LogInterceptor.e(TAG, "=== FATAL ERROR IN UNIQUENESS TASK ===")
+                            LogInterceptor.e(TAG, "Fatal error executing uniqueness task: ${e.message}", e)
+                            e.printStackTrace()
+                            
+                            // Send error log
+                            safeSendLog("error", TAG, "Fatal error in uniqueness task: ${e.message}\n${e.stackTraceToString().take(1000)}")
+                            
+                            // Update task status
+                            try {
+                                apiClient.updateTaskStatus(task.id, "failed")
+                                val request = ApiClient.TaskResultRequest(
+                                    success = false,
+                                    data = mapOf(
+                                        "fatal_error" to (e.message ?: "Unknown error"),
+                                        "stackTrace" to e.stackTraceToString().take(500)
+                                    ),
+                                    error = e.message ?: "Unknown error",
+                                    executionTime = System.currentTimeMillis()
+                                )
+                                apiClient.sendTaskResult(task.id, request, deviceId ?: "")
+                            } catch (sendError: Exception) {
+                                LogInterceptor.e(TAG, "Error sending fatal error result: ${sendError.message}", sendError)
+                            }
+                            
+                            updateNotification("Критическая ошибка: ${e.message}")
+                            
+                            // Don't re-throw - let service continue
+                            LogInterceptor.w(TAG, "Uniqueness task failed but service continues")
+                        }
                     }
                     "surfing", "parsing", "screenshot" -> {
                         // Execute via TaskExecutor with type-specific handling
@@ -468,92 +701,300 @@ class ControllerService : LifecycleService() {
      */
     private suspend fun executeUniquenessTask(task: ApiClient.TaskResponse) {
         try {
-            apiClient.updateTaskStatus(task.id, "running")
+            LogInterceptor.i(TAG, "=== executeUniquenessTask ENTRY ===")
+            LogInterceptor.i(TAG, "Task ID: ${task.id}")
+            LogInterceptor.i(TAG, "Task type: ${task.type}")
+            LogInterceptor.i(TAG, "Task config keys: ${task.config?.keys}")
+            
+            // Send log to backend
+            safeSendLog("info", TAG, "Starting uniqueness task: ${task.id}")
+            
+            LogInterceptor.i(TAG, "Updating task status to 'running'...")
+            try {
+                apiClient.updateTaskStatus(task.id, "running")
+                LogInterceptor.i(TAG, "Task status updated to 'running' successfully")
+            } catch (e: Exception) {
+                LogInterceptor.e(TAG, "Failed to update task status: ${e.message}", e)
+            }
+            
+            // Check if uniquenessService is initialized
+            LogInterceptor.i(TAG, "Checking UniquenessService initialization...")
+            if (!::uniquenessService.isInitialized) {
+                LogInterceptor.e(TAG, "UniquenessService not initialized - attempting to initialize...")
+                try {
+                    uniquenessService = UniquenessService(this, rootUtils)
+                    LogInterceptor.i(TAG, "UniquenessService initialized successfully")
+                } catch (e: Exception) {
+                    LogInterceptor.e(TAG, "Failed to initialize UniquenessService: ${e.message}", e)
+                    throw Exception("UniquenessService not initialized and failed to initialize: ${e.message}")
+                }
+            } else {
+                LogInterceptor.i(TAG, "UniquenessService is already initialized")
+            }
+            
+            // Check and request root access automatically
+            LogInterceptor.i(TAG, "Checking root access...")
+            val rootCheck = rootUtils.checkRootDetailed()
+            LogInterceptor.i(TAG, "Root check: available=${rootCheck.isAvailable}, granted=${rootCheck.isGranted}, details=${rootCheck.details}")
+            
+            if (!rootCheck.isAvailable) {
+                Log.e(TAG, "Device is not rooted")
+                val errorMsg = "Device is not rooted. Root access required for uniqueness tasks."
+                val request = ApiClient.TaskResultRequest(
+                    success = false,
+                    data = mapOf("error" to errorMsg, "rootCheck" to rootCheck.details),
+                    error = errorMsg,
+                    executionTime = System.currentTimeMillis()
+                )
+                apiClient.sendTaskResult(task.id, request, deviceId ?: "")
+                apiClient.updateTaskStatus(task.id, "failed")
+                updateNotification("Ошибка: устройство не имеет root")
+                return
+            }
+            
+            // Request root access if not granted
+            if (!rootCheck.isGranted) {
+                Log.i(TAG, "Root not granted, requesting...")
+                updateNotification("Запрос root доступа...")
+                
+                try {
+                    // Use libsu to request root - this will show system dialog
+                    // Execute in IO dispatcher to avoid blocking main thread
+                    val hasRoot = withContext(Dispatchers.IO) {
+                        try {
+                            val shell = com.topjohnwu.superuser.Shell.getShell()
+                            shell.isRoot
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Exception in Shell.getShell(): ${e.message}", e)
+                            false
+                        }
+                    }
+                    
+                    if (!hasRoot) {
+                        Log.e(TAG, "Failed to get root access after request")
+                        val errorMsg = "Root permission denied. Please grant root access to the app."
+                        val request = ApiClient.TaskResultRequest(
+                            success = false,
+                            data = mapOf("error" to errorMsg, "rootCheck" to rootCheck.details),
+                            error = errorMsg,
+                            executionTime = System.currentTimeMillis()
+                        )
+                        apiClient.sendTaskResult(task.id, request, deviceId ?: "")
+                        apiClient.updateTaskStatus(task.id, "failed")
+                        updateNotification("Ошибка: root доступ отклонен")
+                        return
+                    }
+                    
+                    Log.i(TAG, "Root access granted successfully")
+                    updateNotification("Root доступ получен")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error requesting root: ${e.message}", e)
+                    // Send error log to backend
+                    try {
+                        safeSendLog("error", TAG, "Failed to request root: ${e.message}\n${e.stackTraceToString().take(500)}")
+                    } catch (logError: Exception) {
+                        Log.w(TAG, "Failed to send error log: ${logError.message}")
+                    }
+                    
+                    val errorMsg = "Failed to request root access: ${e.message}"
+                    val request = ApiClient.TaskResultRequest(
+                        success = false,
+                        data = mapOf("error" to errorMsg, "exception" to e.stackTraceToString().take(500)),
+                        error = errorMsg,
+                        executionTime = System.currentTimeMillis()
+                    )
+                    apiClient.sendTaskResult(task.id, request, deviceId ?: "")
+                    apiClient.updateTaskStatus(task.id, "failed")
+                    updateNotification("Ошибка запроса root: ${e.message}")
+                    return
+                }
+            } else {
+                Log.i(TAG, "Root already granted")
+            }
             
             val actions = task.config?.get("actions") as? List<Map<String, Any>> ?: emptyList()
+            if (actions.isEmpty()) {
+                Log.w(TAG, "No actions found in uniqueness task config")
+                val request = ApiClient.TaskResultRequest(
+                    success = false,
+                    data = mapOf("error" to "No actions found in task config"),
+                    error = "No actions found in task config",
+                    executionTime = System.currentTimeMillis()
+                )
+                apiClient.sendTaskResult(task.id, request, deviceId ?: "")
+                apiClient.updateTaskStatus(task.id, "failed")
+                return
+            }
+            
+            Log.i(TAG, "Found ${actions.size} actions to execute")
             val results = mutableMapOf<String, Any>()
             
-            for (action in actions) {
-                val actionType = action["type"] as? String ?: continue
-                
-                updateNotification("Уникализация: $actionType")
-                
-                when (actionType) {
-                    "regenerate_android_id" -> {
-                        results["android_id"] = uniquenessService.regenerateAndroidId()
+            for ((index, action) in actions.withIndex()) {
+                try {
+                    val actionType = action["type"] as? String ?: continue
+                    val actionId = action["id"] as? String ?: "action_${index + 1}"
+                    
+                    Log.i(TAG, "Executing action $index/${actions.size}: $actionType (id: $actionId)")
+                    updateNotification("Уникализация: $actionType ($index/${actions.size})")
+                    
+                    // Send log to backend
+                    try {
+                        safeSendLog("info", TAG, "Executing uniqueness action: $actionType (id: $actionId)")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to send log: ${e.message}")
                     }
-                    "regenerate_aaid" -> {
-                        results["aaid"] = uniquenessService.regenerateAaid()
-                    }
-                    "clear_chrome_data" -> {
-                        results["chrome_data"] = uniquenessService.clearChromeData()
-                    }
-                    "clear_webview_data" -> {
-                        results["webview_data"] = uniquenessService.clearWebViewData()
-                    }
-                    "change_user_agent" -> {
-                        val ua = action["ua"] as? String
-                        results["user_agent"] = uniquenessService.changeUserAgent(
-                            if (ua == "random") null else ua
-                        )
-                    }
-                    "change_timezone" -> {
-                        val tz = action["timezone"] as? String
-                        val countryCode = action["country_code"] as? String
-                        if (tz == "random" || tz == "auto") {
-                            val country = countryCode ?: "US"
-                            results["timezone"] = uniquenessService.changeTimezoneByCountry(country)
-                        } else if (tz != null) {
-                            results["timezone"] = uniquenessService.changeTimezone(tz)
+                    
+                    val actionResult = when (actionType) {
+                        "regenerate_android_id" -> {
+                            uniquenessService.regenerateAndroidId()
+                        }
+                        "regenerate_aaid" -> {
+                            uniquenessService.regenerateAaid()
+                        }
+                        "clear_chrome_data" -> {
+                            uniquenessService.clearChromeData()
+                        }
+                        "clear_webview_data" -> {
+                            uniquenessService.clearWebViewData()
+                        }
+                        "change_user_agent" -> {
+                            val ua = action["ua"] as? String
+                            uniquenessService.changeUserAgent(
+                                if (ua == "random") null else ua
+                            )
+                        }
+                        "change_timezone" -> {
+                            val tz = action["timezone"] as? String
+                            val countryCode = action["country_code"] as? String
+                            if (tz == "random" || tz == "auto") {
+                                val country = countryCode ?: "US"
+                                uniquenessService.changeTimezoneByCountry(country)
+                            } else if (tz != null) {
+                                uniquenessService.changeTimezone(tz)
+                            } else {
+                                false
+                            }
+                        }
+                        "change_location" -> {
+                            val lat = action["latitude"]
+                            val lng = action["longitude"]
+                            val countryCode = action["country_code"] as? String
+                            
+                            if (lat == "auto" || lng == "auto") {
+                                val country = countryCode ?: "US"
+                                uniquenessService.changeLocationByCountry(country)
+                            } else if (lat is Number && lng is Number) {
+                                uniquenessService.changeLocation(lat.toDouble(), lng.toDouble())
+                            } else {
+                                false
+                            }
+                        }
+                        "modify_build_prop" -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val params = action["params"] as? Map<String, String> ?: emptyMap()
+                            uniquenessService.modifyBuildProp(params)
+                        }
+                        "detect_proxy_location" -> {
+                            // This action doesn't return boolean, handle separately
+                            Log.i(TAG, "detect_proxy_location action - skipping (not implemented)")
+                            true
+                        }
+                        "quick_reset" -> {
+                            val result = uniquenessService.quickReset()
+                            results["quick_reset"] = result.success
+                            results.putAll(result.results.mapValues { it.value.toString() })
+                            result.success
+                        }
+                        "full_reset" -> {
+                            val country = action["country"] as? String
+                            val result = uniquenessService.fullReset(country)
+                            results["full_reset"] = result.success
+                            results.putAll(result.results.mapValues { it.value.toString() })
+                            result.success
+                        }
+                        else -> {
+                            Log.w(TAG, "Unknown action type: $actionType")
+                            results["${actionId}_error"] = "Unknown action type: $actionType"
+                            false
                         }
                     }
-                    "change_location" -> {
-                        val lat = action["latitude"]
-                        val lng = action["longitude"]
-                        val countryCode = action["country_code"] as? String
-                        
-                        if (lat == "auto" || lng == "auto") {
-                            val country = countryCode ?: "US"
-                            results["location"] = uniquenessService.changeLocationByCountry(country)
-                        } else if (lat is Number && lng is Number) {
-                            results["location"] = uniquenessService.changeLocation(lat.toDouble(), lng.toDouble())
-                        }
-                    }
-                    "modify_build_prop" -> {
-                        @Suppress("UNCHECKED_CAST")
-                        val params = action["params"] as? Map<String, String> ?: emptyMap()
-                        results["build_prop"] = uniquenessService.modifyBuildProp(params)
-                    }
-                    "quick_reset" -> {
-                        val result = uniquenessService.quickReset()
-                        results["quick_reset"] = result.success
-                        results.putAll(result.results.mapValues { it.value.toString() })
-                    }
-                    "full_reset" -> {
-                        val country = action["country"] as? String
-                        val result = uniquenessService.fullReset(country)
-                        results["full_reset"] = result.success
-                        results.putAll(result.results.mapValues { it.value.toString() })
-                    }
+                    
+                    results[actionId] = actionResult
+                    Log.i(TAG, "Action $actionId completed: $actionResult")
+                    
+                    // Send success log
+                    safeSendLog("info", TAG, "Uniqueness action completed: $actionId = $actionResult")
+                    
+                } catch (e: Exception) {
+                    val actionId = action["id"] as? String ?: "action_${index + 1}"
+                    Log.e(TAG, "Error executing action $actionId: ${e.message}", e)
+                    
+                    // Send error log to backend
+                    safeSendLog("error", TAG, "Uniqueness action failed: $actionId - ${e.message}")
+                    
+                    results["${actionId}_error"] = e.message ?: "Unknown error"
+                    results[actionId] = false
                 }
             }
             
             // Send result to backend
-            val success = results.values.all { it != false }
+            val success = results.values.filterIsInstance<Boolean>().all { it } && 
+                         results.values.filterIsInstance<String>().none { it.contains("error") }
+            
+            Log.i(TAG, "Uniqueness task completed: success=$success, results=${results.keys}")
+            
+            // Send completion log
+            safeSendLog("info", TAG, "Uniqueness task completed: success=$success, actions=${results.size}")
+            
             val request = ApiClient.TaskResultRequest(
                 success = success,
                 data = results,
-                error = if (!success) "Some uniqueness actions failed" else null,
+                error = if (!success) "Some uniqueness actions failed. Check results for details." else null,
                 executionTime = System.currentTimeMillis()
             )
-            apiClient.sendTaskResult(task.id, request, deviceId ?: "")
-            apiClient.updateTaskStatus(task.id, if (success) "completed" else "failed")
             
-            updateNotification("Уникализация завершена: ${if (success) "успешно" else "с ошибками"}")
+            try {
+                apiClient.sendTaskResult(task.id, request, deviceId ?: "")
+                apiClient.updateTaskStatus(task.id, if (success) "completed" else "failed")
+                updateNotification("Уникализация завершена: ${if (success) "успешно" else "с ошибками"}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending task result: ${e.message}", e)
+                onError?.invoke("Ошибка отправки результата: ${e.message}")
+            }
             
         } catch (e: Exception) {
-            apiClient.updateTaskStatus(task.id, "failed")
+            Log.e(TAG, "Fatal error in uniqueness task: ${e.message}", e)
+            
+            // Send fatal error log to backend
+            try {
+                safeSendLog("error", TAG, "Fatal error in uniqueness task ${task.id}: ${e.message}\n${e.stackTraceToString().take(1000)}")
+            } catch (logError: Exception) {
+                Log.w(TAG, "Failed to send fatal error log: ${logError.message}")
+            }
+            
+            try {
+                apiClient.updateTaskStatus(task.id, "failed")
+                val request = ApiClient.TaskResultRequest(
+                    success = false,
+                    data = mapOf(
+                        "error" to (e.message ?: "Unknown error"), 
+                        "stackTrace" to (e.stackTraceToString().take(500)),
+                        "taskId" to task.id,
+                        "taskType" to "uniqueness"
+                    ),
+                    error = e.message ?: "Unknown error",
+                    executionTime = System.currentTimeMillis()
+                )
+                apiClient.sendTaskResult(task.id, request, deviceId ?: "")
+            } catch (sendError: Exception) {
+                Log.e(TAG, "Error sending error result: ${sendError.message}", sendError)
+            }
+            
             onError?.invoke("Ошибка уникализации: ${e.message}")
+            updateNotification("Ошибка уникализации: ${e.message}")
+            
+            // Don't let the exception crash the service
+            Log.w(TAG, "Uniqueness task failed but service continues running")
         }
     }
     
@@ -725,6 +1166,29 @@ class ControllerService : LifecycleService() {
     /**
      * Get backend URL from preferences or default
      */
+    /**
+     * Safely send log to backend without throwing exceptions
+     * Now uses LogInterceptor which automatically captures all Log calls
+     */
+    private fun safeSendLog(level: String, tag: String, message: String) {
+        try {
+            // Use LogInterceptor which automatically forwards to backend
+            when (level.lowercase()) {
+                "error", "e" -> LogInterceptor.e(TAG, "[$tag] $message")
+                "warn", "w" -> LogInterceptor.w(TAG, "[$tag] $message")
+                "debug", "d" -> LogInterceptor.d(TAG, "[$tag] $message")
+                else -> LogInterceptor.i(TAG, "[$tag] $message")
+            }
+        } catch (e: Exception) {
+            // Last resort - try to log to logcat with minimal code
+            try {
+                android.util.Log.e("ControllerService", "Error in safeSendLog: ${e.message}")
+            } catch (e2: Exception) {
+                // If even this fails, we're in serious trouble - do nothing
+            }
+        }
+    }
+    
     private fun getBackendUrl(): String {
         return prefs.getString("backend_url", DEFAULT_BACKEND_URL) ?: DEFAULT_BACKEND_URL
     }
