@@ -51,20 +51,13 @@ export class SemrushService {
       let data: any;
 
       if (this.useRapidApi) {
-        // RapidAPI Semrush8 format based on documentation
-        // Endpoint: GET Traffic
-        // Parameter: url (the domain to check)
-        // Response format: JSON with srDomain, srRank, srKeywords, srTraffic, srCosts, etc.
+        // RapidAPI Semrush8 uses standard Semrush API format with RapidAPI headers
+        // Based on logs: /traffic endpoint doesn't exist (404), but standard format works (429 rate limit)
+        // Use standard Semrush API endpoint format with RapidAPI authentication headers
         const endpoints = [
-          // Primary RapidAPI endpoint format (most likely)
-          `${this.baseUrl}/traffic?url=${encodeURIComponent(domain)}`,
-          // Alternative format with domain parameter
-          `${this.baseUrl}/traffic?domain=${encodeURIComponent(domain)}`,
-          // Try with full URL format
-          `${this.baseUrl}/traffic?url=https://${encodeURIComponent(domain)}`,
-          // Fallback: Standard Semrush API format (in case RapidAPI wraps it)
+          // Standard Semrush API format with database (most reliable based on logs)
           `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num&database=us`,
-          // Another fallback format
+          // Standard Semrush API format without database
           `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`,
         ];
         
