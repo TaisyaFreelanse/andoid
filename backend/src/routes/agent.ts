@@ -166,14 +166,32 @@ export async function agentRoutes(fastify: FastifyInstance) {
       success: true,
       tasks: tasks.map((task) => {
         const configJson = task.configJson as any;
-        // Extract steps from configJson and format for Android Agent
-        const steps = configJson?.steps?.map((step: any) => {
-          const { type, ...stepConfig } = step; // Separate type from other fields
-          return {
-            type: type,
-            config: stepConfig, // All other fields go into config
-          };
-        }) || [];
+        
+        // For uniqueness tasks, convert actions to steps (but keep actions in config for Android agent)
+        let steps: any[] = [];
+        if (task.type === 'uniqueness' && configJson?.actions) {
+          // Convert uniqueness actions to steps format for compatibility
+          // Note: actions remain in configJson for Android agent to use
+          steps = configJson.actions.map((action: any, index: number) => {
+            const { type, id, description, ...actionConfig } = action;
+            return {
+              type: type,
+              id: id || `action_${index + 1}`,
+              description: description,
+              config: actionConfig,
+            };
+          });
+          logger.info({ taskId: task.id, actionsCount: configJson.actions.length, stepsCount: steps.length }, 'Converted uniqueness actions to steps');
+        } else if (configJson?.steps) {
+          // For other task types, use steps directly
+          steps = configJson.steps.map((step: any) => {
+            const { type, ...stepConfig } = step; // Separate type from other fields
+            return {
+              type: type,
+              config: stepConfig, // All other fields go into config
+            };
+          });
+        }
         
         logger.info({ taskId: task.id, stepsCount: steps.length, stepTypes: steps.map((s: any) => s.type) }, 'Preparing task for Android Agent');
         
