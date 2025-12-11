@@ -456,15 +456,15 @@ export async function agentRoutes(fastify: FastifyInstance) {
                 });
                 
                 if (!existing) {
-                  await prisma.parsedData.create({
-                    data: {
-                      taskId: taskId,
-                      url: url,
-                      adUrl: adUrls[0] || resultData.adUrl || null,
+          await prisma.parsedData.create({
+            data: {
+              taskId: taskId,
+              url: url,
+              adUrl: adUrls[0] || resultData.adUrl || null,
                       adDomain: singleDomain,
-                      screenshotPath: screenshots[0] || resultData.screenshot || resultData.screenshotPath || null,
-                    },
-                  });
+              screenshotPath: screenshots[0] || resultData.screenshot || resultData.screenshotPath || null,
+            },
+          });
                   savedDomainsCount = 1;
                   logger.info({ taskId, domain: singleDomain }, 'Single domain saved after API check');
                 } else {

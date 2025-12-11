@@ -499,10 +499,24 @@ class ControllerService : LifecycleService() {
                     }
                     "change_timezone" -> {
                         val tz = action["timezone"] as? String
-                        if (tz == "random") {
-                            results["timezone"] = uniquenessService.changeTimezoneByCountry("US")
+                        val countryCode = action["country_code"] as? String
+                        if (tz == "random" || tz == "auto") {
+                            val country = countryCode ?: "US"
+                            results["timezone"] = uniquenessService.changeTimezoneByCountry(country)
                         } else if (tz != null) {
                             results["timezone"] = uniquenessService.changeTimezone(tz)
+                        }
+                    }
+                    "change_location" -> {
+                        val lat = action["latitude"]
+                        val lng = action["longitude"]
+                        val countryCode = action["country_code"] as? String
+                        
+                        if (lat == "auto" || lng == "auto") {
+                            val country = countryCode ?: "US"
+                            results["location"] = uniquenessService.changeLocationByCountry(country)
+                        } else if (lat is Number && lng is Number) {
+                            results["location"] = uniquenessService.changeLocation(lat.toDouble(), lng.toDouble())
                         }
                     }
                     "modify_build_prop" -> {

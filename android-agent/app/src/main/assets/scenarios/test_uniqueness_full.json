@@ -1,0 +1,78 @@
+{
+  "id": "test_uniqueness_full",
+  "name": "Полный тест уникализации",
+  "description": "Тестирование всех функций уникализации согласно плану (307-318): AAID/AndroidID, Chrome/WebView, User-Agent, timezone, build.prop, GPS",
+  "version": "1.0",
+  "type": "uniqueness",
+  "requires_root": true,
+  "timeout": 120000,
+  "config": {
+    "backup_before": true,
+    "reboot_after": false,
+    "verify_changes": true,
+    "log_detailed": true
+  },
+  "actions": [
+    {
+      "id": "action_1",
+      "type": "regenerate_android_id",
+      "description": "1. Регенерация AndroidID через settings put secure android_id"
+    },
+    {
+      "id": "action_2",
+      "type": "regenerate_aaid",
+      "description": "2. Регенерация AAID через settings put secure android_id"
+    },
+    {
+      "id": "action_3",
+      "type": "clear_chrome_data",
+      "description": "3. Очистка Chrome data через pm clear и удаление папок"
+    },
+    {
+      "id": "action_4",
+      "type": "clear_webview_data",
+      "description": "4. Очистка WebView data через pm clear и удаление папок"
+    },
+    {
+      "id": "action_5",
+      "type": "change_user_agent",
+      "ua": "random",
+      "description": "5. Изменение User-Agent через build.prop или runtime"
+    },
+    {
+      "id": "action_6",
+      "type": "change_timezone",
+      "timezone": "America/New_York",
+      "description": "6. Изменение timezone через settings put global auto_time_zone"
+    },
+    {
+      "id": "action_7",
+      "type": "change_location",
+      "latitude": 40.7128,
+      "longitude": -74.0060,
+      "description": "7. Изменение GPS координат через settings put secure mock_location"
+    },
+    {
+      "id": "action_8",
+      "type": "modify_build_prop",
+      "params": {
+        "ro.product.model": "SM-G998B",
+        "ro.product.manufacturer": "samsung",
+        "ro.product.brand": "samsung"
+      },
+      "description": "8. Изменение build.prop параметров (model, manufacturer, etc.)"
+    }
+  ],
+  "post_process": {
+    "verify_android_id_changed": true,
+    "verify_aaid_changed": true,
+    "verify_user_agent_changed": true,
+    "verify_timezone_changed": true,
+    "verify_location_changed": true,
+    "verify_build_prop_changed": true,
+    "log_new_fingerprint": true,
+    "send_to_backend": true,
+    "compare_before_after": true
+  }
+}
+

@@ -1,0 +1,158 @@
+{
+  "id": "uniqueness_with_proxy_us",
+  "name": "Комплексная уникализация с прокси (США)",
+  "description": "Полная проверка уникализации с мобильными прокси США, авторотацией IP каждые 10 минут, автоматической настройкой timezone и GPS по геолокации прокси",
+  "version": "1.0",
+  "type": "uniqueness",
+  "requires_root": true,
+  "timeout": 180000,
+  "config": {
+    "backup_before": true,
+    "reboot_after": false,
+    "verify_changes": true,
+    "log_detailed": true,
+    "auto_detect_country": true,
+    "use_proxy_geolocation": true,
+    "proxy_rotation_interval": 600000,
+    "proxy_rotation_enabled": true
+  },
+  "proxy": {
+    "type": "socks5",
+    "rotation": true,
+    "rotation_interval_ms": 600000,
+    "country": "US",
+    "mobile": true,
+    "auto_rotate_ip": true,
+    "ip_rotation_interval_minutes": 10,
+    "proxies": [
+      {
+        "host": "x398.fxdx.in",
+        "port": 18577,
+        "username": "bmusproxy023054",
+        "password": "n6zpj7v773wa",
+        "country": "US",
+        "state": "NY",
+        "timezone": "America/New_York"
+      },
+      {
+        "host": "x356.fxdx.in",
+        "port": 14517,
+        "username": "bmusproxy294603",
+        "password": "pkrygbfbby73",
+        "country": "US",
+        "state": "CA",
+        "timezone": "America/Los_Angeles"
+      },
+      {
+        "host": "x468.fxdx.in",
+        "port": 13873,
+        "username": "bmusproxy054045",
+        "password": "s35cbq2gnmvv",
+        "country": "US",
+        "state": "TX",
+        "timezone": "America/Chicago"
+      },
+      {
+        "host": "x343.fxdx.in",
+        "port": 14653,
+        "username": "bmusproxy233723",
+        "password": "dmsbx95cn5sr",
+        "country": "US",
+        "state": "FL",
+        "timezone": "America/New_York"
+      },
+      {
+        "host": "x335.fxdx.in",
+        "port": 14613,
+        "username": "bmusproxy285133",
+        "password": "Rc4uFGanCj0e5",
+        "country": "US",
+        "state": "IL",
+        "timezone": "America/Chicago"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "action_1",
+      "type": "detect_proxy_location",
+      "save_as": "proxy_location",
+      "description": "Определение геолокации прокси (страна, штат, timezone)"
+    },
+    {
+      "id": "action_2",
+      "type": "regenerate_android_id",
+      "description": "1. Регенерация AndroidID через settings put secure android_id"
+    },
+    {
+      "id": "action_3",
+      "type": "regenerate_aaid",
+      "description": "2. Регенерация AAID через settings put secure android_id"
+    },
+    {
+      "id": "action_4",
+      "type": "clear_chrome_data",
+      "description": "3. Очистка Chrome data через pm clear и удаление папок"
+    },
+    {
+      "id": "action_5",
+      "type": "clear_webview_data",
+      "description": "4. Очистка WebView data через pm clear и удаление папок"
+    },
+    {
+      "id": "action_6",
+      "type": "change_user_agent",
+      "ua": "random",
+      "locale": "en_US",
+      "description": "5. Изменение User-Agent через build.prop или runtime"
+    },
+    {
+      "id": "action_7",
+      "type": "change_timezone",
+      "timezone": "auto",
+      "country_code": "US",
+      "use_proxy_timezone": true,
+      "description": "6. Автоматическая установка timezone по геолокации прокси (settings put global auto_time_zone)"
+    },
+    {
+      "id": "action_8",
+      "type": "change_location",
+      "latitude": "auto",
+      "longitude": "auto",
+      "country_code": "US",
+      "use_proxy_location": true,
+      "description": "7. Автоматическая установка GPS координат по геолокации прокси (settings put secure mock_location)"
+    },
+    {
+      "id": "action_9",
+      "type": "modify_build_prop",
+      "params": {
+        "ro.product.model": "random",
+        "ro.product.manufacturer": "random",
+        "ro.product.brand": "random"
+      },
+      "description": "8. Изменение build.prop параметров (model, manufacturer, etc.)"
+    },
+    {
+      "id": "action_10",
+      "type": "change_locale",
+      "locale": "en_US",
+      "description": "9. Изменение локали устройства на en_US"
+    }
+  ],
+  "post_process": {
+    "verify_android_id_changed": true,
+    "verify_aaid_changed": true,
+    "verify_user_agent_changed": true,
+    "verify_timezone_matches_proxy": true,
+    "verify_location_matches_proxy": true,
+    "verify_build_prop_changed": true,
+    "verify_proxy_connected": true,
+    "verify_proxy_location": true,
+    "log_new_fingerprint": true,
+    "send_to_backend": true,
+    "compare_before_after": true,
+    "log_proxy_rotation": true
+  }
+}
+
