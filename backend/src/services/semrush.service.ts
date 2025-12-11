@@ -51,21 +51,21 @@ export class SemrushService {
       let data: any;
 
       if (this.useRapidApi) {
-        // RapidAPI format - based on Semrush API documentation
-        // Standard Semrush API format: /?type=domain_ranks&domain=...&export_columns=...
-        // For RapidAPI, we use the same format but with RapidAPI headers instead of key parameter
-        // Note: RapidAPI might wrap the standard Semrush API, so we try standard format first
+        // RapidAPI Semrush8 format based on documentation
+        // Endpoint: GET Traffic
+        // Parameter: url (the domain to check)
+        // Response format: JSON with srDomain, srRank, srKeywords, srTraffic, srCosts, etc.
         const endpoints = [
-          // Try RapidAPI specific format - might be different from standard Semrush
-          `${this.baseUrl}/domain_ranks?domain=${encodeURIComponent(domain)}`,
-          // Standard Semrush API format with database
+          // Primary RapidAPI endpoint format (most likely)
+          `${this.baseUrl}/traffic?url=${encodeURIComponent(domain)}`,
+          // Alternative format with domain parameter
+          `${this.baseUrl}/traffic?domain=${encodeURIComponent(domain)}`,
+          // Try with full URL format
+          `${this.baseUrl}/traffic?url=https://${encodeURIComponent(domain)}`,
+          // Fallback: Standard Semrush API format (in case RapidAPI wraps it)
           `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num&database=us`,
-          // Standard Semrush API format without database
+          // Another fallback format
           `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`,
-          // Alternative with key parameter (though key is in headers)
-          `${this.baseUrl}/?type=domain_ranks&domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num&key=${this.rapidApiKey}`,
-          // REST-style with full params
-          `${this.baseUrl}/domain_ranks?domain=${encodeURIComponent(domain)}&export_columns=domain_rank,organic_keywords,organic_traffic,backlinks_num`,
         ];
         
         let lastError: Error | null = null;
@@ -131,22 +131,36 @@ export class SemrushService {
         
         const responseText = await response.text();
         
-        // RapidAPI might return JSON or CSV
+        // RapidAPI Semrush8 returns JSON format based on documentation
+        // Response fields: srDomain, srRank, srKeywords, srTraffic, srCosts, srUrlLinks, srHostLinks, srDomainLinks
         try {
           const jsonData = JSON.parse(responseText);
           // If JSON, try to extract data
           if (jsonData && typeof jsonData === 'object') {
-            // Handle different response formats
+            // Handle RapidAPI Semrush8 response format
             const result: any = {};
             
-            // Try to extract from various possible JSON structures
-            if (jsonData.data && Array.isArray(jsonData.data) && jsonData.data.length > 0) {
+            // RapidAPI format: direct object with sr* fields
+            if (jsonData.srDomain || jsonData.srRank !== undefined) {
+              result.domain_rank = jsonData.srRank || jsonData.domain_rank || jsonData.domainRank || null;
+              result.organic_keywords = jsonData.srKeywords || jsonData.organic_keywords || jsonData.organicKeywords || null;
+              result.organic_traffic = jsonData.srTraffic || jsonData.organic_traffic || jsonData.organicTraffic || null;
+              result.backlinks_num = jsonData.srDomainLinks || jsonData.srUrlLinks || jsonData.srHostLinks || jsonData.backlinks_num || jsonData.backlinks || jsonData.backlinksNum || null;
+              result.domain = jsonData.srDomain || domain;
+              result.costs = jsonData.srCosts || null;
+            }
+            // Alternative: data array format
+            else if (jsonData.data && Array.isArray(jsonData.data) && jsonData.data.length > 0) {
               const firstItem = jsonData.data[0];
-              result.domain_rank = firstItem.domain_rank || firstItem.domainRank || null;
-              result.organic_keywords = firstItem.organic_keywords || firstItem.organicKeywords || null;
-              result.organic_traffic = firstItem.organic_traffic || firstItem.organicTraffic || null;
-              result.backlinks_num = firstItem.backlinks_num || firstItem.backlinks || firstItem.backlinksNum || null;
-            } else if (jsonData.domain_rank !== undefined || jsonData.domainRank !== undefined) {
+              result.domain_rank = firstItem.srRank || firstItem.domain_rank || firstItem.domainRank || null;
+              result.organic_keywords = firstItem.srKeywords || firstItem.organic_keywords || firstItem.organicKeywords || null;
+              result.organic_traffic = firstItem.srTraffic || firstItem.organic_traffic || firstItem.organicTraffic || null;
+              result.backlinks_num = firstItem.srDomainLinks || firstItem.srUrlLinks || firstItem.srHostLinks || firstItem.backlinks_num || firstItem.backlinks || firstItem.backlinksNum || null;
+              result.domain = firstItem.srDomain || domain;
+              result.costs = firstItem.srCosts || null;
+            }
+            // Standard Semrush format fallback
+            else if (jsonData.domain_rank !== undefined || jsonData.domainRank !== undefined) {
               result.domain_rank = jsonData.domain_rank || jsonData.domainRank;
               result.organic_keywords = jsonData.organic_keywords || jsonData.organicKeywords;
               result.organic_traffic = jsonData.organic_traffic || jsonData.organicTraffic;
@@ -154,7 +168,7 @@ export class SemrushService {
             }
             
             // If we got valid data, use it
-            if (result.domain_rank !== undefined || result.organic_keywords !== undefined || result.backlinks_num !== undefined) {
+            if (result.domain_rank !== undefined || result.organic_keywords !== undefined || result.backlinks_num !== undefined || result.domain) {
               const expiresAt = new Date();
               expiresAt.setHours(expiresAt.getHours() + 24);
 
@@ -179,6 +193,7 @@ export class SemrushService {
           }
         } catch (jsonError) {
           // Not JSON, try CSV parsing below
+          logger.debug({ domain, error: jsonError, responsePreview: responseText.substring(0, 200) }, 'Failed to parse JSON, trying CSV');
           data = responseText;
         }
       } else {
