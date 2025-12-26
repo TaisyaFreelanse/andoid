@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground>
+        <vector android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+            <path android:fillColor="#FFFFFF" android:pathData="M24,14c-5.52,0 -10,4.48 -10,10s4.48,10 10,10s10,-4.48 10,-10S29.52,14 24,14z"/>
+        </vector>
+    </foreground>
+</adaptive-icon>
+

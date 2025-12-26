@@ -779,11 +779,65 @@ export async function agentRoutes(fastify: FastifyInstance) {
     }
 
     // Broadcast to WebSocket clients via broadcastLog
+    // #region agent log
+    try {
+      await fetch('http://127.0.0.1:7242/ingest/e936d04e-f1a5-4fb8-85d4-855c19380a9b', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: 'agent.ts:/logs:BEFORE_BROADCAST',
+          message: 'About to broadcast log',
+          data: { level, tag, message: message.substring(0, 50), deviceId },
+          timestamp: Date.now(),
+          sessionId: 'debug-session',
+          runId: 'run1',
+          hypothesisId: 'C'
+        })
+      }).catch(() => {});
+    } catch (e) { }
+    // #endregion
+    
     try {
       const logMessage = `[${level.toUpperCase()}] ${tag}: ${message}`;
       broadcastLog(logMessage, level);
+      
+      // #region agent log
+      try {
+        await fetch('http://127.0.0.1:7242/ingest/e936d04e-f1a5-4fb8-85d4-855c19380a9b', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: 'agent.ts:/logs:AFTER_BROADCAST',
+            message: 'broadcastLog called',
+            data: { logMessage: logMessage.substring(0, 50) },
+            timestamp: Date.now(),
+            sessionId: 'debug-session',
+            runId: 'run1',
+            hypothesisId: 'C'
+          })
+        }).catch(() => {});
+      } catch (e) { }
+      // #endregion
     } catch (broadcastError) {
       logger.warn({ error: broadcastError }, 'Failed to broadcast log to WebSocket');
+      
+      // #region agent log
+      try {
+        await fetch('http://127.0.0.1:7242/ingest/e936d04e-f1a5-4fb8-85d4-855c19380a9b', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: 'agent.ts:/logs:BROADCAST_ERROR',
+            message: 'broadcastLog failed',
+            data: { error: String(broadcastError) },
+            timestamp: Date.now(),
+            sessionId: 'debug-session',
+            runId: 'run1',
+            hypothesisId: 'C'
+          })
+        }).catch(() => {});
+      } catch (e) { }
+      // #endregion
     }
 
     return reply.send({ success: true });

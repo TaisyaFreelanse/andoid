@@ -12,6 +12,7 @@ import java.io.IOException
 import java.net.Authenticator
 import java.net.PasswordAuthentication
 import java.util.concurrent.TimeUnit
+import org.json.JSONObject
 
 /**
  * ApiClient - HTTP client for backend API communication
@@ -239,10 +240,31 @@ class ApiClient(
      * Send task result
      */
     suspend fun sendTaskResult(taskId: String, result: TaskResultRequest, deviceId: String): Boolean {
+        // #region agent log
+        try {
+            val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+            val logEntry = JSONObject().apply {
+                put("sessionId", "debug-session")
+                put("runId", "run1")
+                put("hypothesisId", "E")
+                put("location", "ApiClient.kt:sendTaskResult:ENTRY")
+                put("message", "sendTaskResult called")
+                put("data", JSONObject().apply {
+                    put("taskId", taskId)
+                    put("deviceId", deviceId)
+                    put("success", result.success)
+                    put("hasError", result.error != null)
+                })
+                put("timestamp", System.currentTimeMillis())
+            }
+            debugLog.appendText(logEntry.toString() + "\n")
+        } catch (e: Exception) { }
+        // #endregion
+        
         val json = gson.toJson(result)
         val body = json.toRequestBody("application/json".toMediaType())
         
-        android.util.Log.d("ApiClient", "Sending task result for taskId: $taskId, deviceId: $deviceId")
+        android.util.Log.i("ApiClient", "Sending task result for taskId: $taskId, deviceId: $deviceId, success: ${result.success}")
         
         val request = Request.Builder()
             .url("$baseUrl/api/agent/tasks/$taskId/result")
@@ -254,10 +276,82 @@ class ApiClient(
             }
             .build()
 
-        return executeRequest(request) { response ->
-            android.util.Log.d("ApiClient", "Task result response: ${response.code} for taskId: $taskId")
+        // #region agent log
+        try {
+            val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+            val logEntry = JSONObject().apply {
+                put("sessionId", "debug-session")
+                put("runId", "run1")
+                put("hypothesisId", "E")
+                put("location", "ApiClient.kt:sendTaskResult:BEFORE_REQUEST")
+                put("message", "About to execute HTTP request")
+                put("data", JSONObject().apply {
+                    put("url", "$baseUrl/api/agent/tasks/$taskId/result")
+                })
+                put("timestamp", System.currentTimeMillis())
+            }
+            debugLog.appendText(logEntry.toString() + "\n")
+        } catch (e: Exception) { }
+        // #endregion
+
+        val httpResult = executeRequest(request) { response ->
+            // #region agent log
+            try {
+                val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+                val logEntry = JSONObject().apply {
+                    put("sessionId", "debug-session")
+                    put("runId", "run1")
+                    put("hypothesisId", "E")
+                    put("location", "ApiClient.kt:sendTaskResult:RESPONSE")
+                    put("message", "HTTP response received")
+                    put("data", JSONObject().apply {
+                        put("code", response.code)
+                        put("isSuccessful", response.isSuccessful)
+                    })
+                    put("timestamp", System.currentTimeMillis())
+                }
+                debugLog.appendText(logEntry.toString() + "\n")
+            } catch (e: Exception) { }
+            // #endregion
+            
+            if (response.isSuccessful) {
+                android.util.Log.i("ApiClient", "Task result sent successfully: taskId=$taskId, HTTP ${response.code}")
+            } else {
+                android.util.Log.e("ApiClient", "Task result send failed: taskId=$taskId, HTTP ${response.code}")
+                try {
+                    val errorBody = response.body?.string()
+                    android.util.Log.e("ApiClient", "Task result error body: $errorBody")
+                } catch (e: Exception) {
+                    android.util.Log.e("ApiClient", "Failed to read error body: ${e.message}")
+                }
+            }
             response.isSuccessful
-        } ?: false
+        }
+        
+        val finalResult = httpResult ?: run {
+            android.util.Log.e("ApiClient", "Task result send failed: network error for taskId=$taskId")
+            false
+        }
+        
+        // #region agent log
+        try {
+            val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+            val logEntry = JSONObject().apply {
+                put("sessionId", "debug-session")
+                put("runId", "run1")
+                put("hypothesisId", "E")
+                put("location", "ApiClient.kt:sendTaskResult:EXIT")
+                put("message", "sendTaskResult completed")
+                put("data", JSONObject().apply {
+                    put("result", finalResult)
+                })
+                put("timestamp", System.currentTimeMillis())
+            }
+            debugLog.appendText(logEntry.toString() + "\n")
+        } catch (e: Exception) { }
+        // #endregion
+        
+        return finalResult
     }
 
     /**
@@ -356,7 +450,47 @@ class ApiClient(
         message: String,
         taskId: String? = null
     ): Boolean {
-        val deviceId = storedDeviceId ?: return false
+        // #region agent log
+        try {
+            val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+            val logEntry = org.json.JSONObject().apply {
+                put("sessionId", "debug-session")
+                put("runId", "run1")
+                put("hypothesisId", "A")
+                put("location", "ApiClient.kt:sendLog:ENTRY")
+                put("message", "sendLog called")
+                put("data", org.json.JSONObject().apply {
+                    put("level", level)
+                    put("tag", tag)
+                    put("message", message.take(100))
+                    put("taskId", taskId)
+                    put("storedDeviceId", storedDeviceId)
+                })
+                put("timestamp", System.currentTimeMillis())
+            }
+            debugLog.appendText(logEntry.toString() + "\n")
+        } catch (e: Exception) { }
+        // #endregion
+        
+        val deviceId = storedDeviceId
+        if (deviceId == null) {
+            android.util.Log.w("ApiClient", "sendLog failed: storedDeviceId is null")
+            // #region agent log
+            try {
+                val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+                val logEntry = org.json.JSONObject().apply {
+                    put("sessionId", "debug-session")
+                    put("runId", "run1")
+                    put("hypothesisId", "A")
+                    put("location", "ApiClient.kt:sendLog:DEVICE_ID_NULL")
+                    put("message", "deviceId is null, returning false")
+                    put("timestamp", System.currentTimeMillis())
+                }
+                debugLog.appendText(logEntry.toString() + "\n")
+            } catch (e: Exception) { }
+            // #endregion
+            return false
+        }
         
         val logData = mapOf(
             "level" to level,
@@ -379,9 +513,76 @@ class ApiClient(
             }
             .build()
 
-        return executeRequest(request) { response ->
+        // #region agent log
+        try {
+            val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+            val logEntry = org.json.JSONObject().apply {
+                put("sessionId", "debug-session")
+                put("runId", "run1")
+                put("hypothesisId", "B")
+                put("location", "ApiClient.kt:sendLog:BEFORE_REQUEST")
+                put("message", "About to execute HTTP request")
+                put("data", org.json.JSONObject().apply {
+                    put("url", "$baseUrl/api/agent/logs")
+                    put("deviceId", deviceId)
+                })
+                put("timestamp", System.currentTimeMillis())
+            }
+            debugLog.appendText(logEntry.toString() + "\n")
+        } catch (e: Exception) { }
+        // #endregion
+
+        val result = executeRequest(request) { response ->
+            // #region agent log
+            try {
+                val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+                val logEntry = org.json.JSONObject().apply {
+                    put("sessionId", "debug-session")
+                    put("runId", "run1")
+                    put("hypothesisId", "B")
+                    put("location", "ApiClient.kt:sendLog:RESPONSE")
+                    put("message", "HTTP response received")
+                    put("data", org.json.JSONObject().apply {
+                        put("code", response.code)
+                        put("isSuccessful", response.isSuccessful)
+                    })
+                    put("timestamp", System.currentTimeMillis())
+                }
+                debugLog.appendText(logEntry.toString() + "\n")
+            } catch (e: Exception) { }
+            // #endregion
+            
+            if (!response.isSuccessful) {
+                android.util.Log.w("ApiClient", "sendLog failed: HTTP ${response.code} for tag=$tag, message=${message.take(50)}")
+                try {
+                    val errorBody = response.body?.string()
+                    android.util.Log.w("ApiClient", "sendLog error body: $errorBody")
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
             response.isSuccessful
-        } ?: false
+        }
+        
+        // #region agent log
+        try {
+            val debugLog = java.io.File("C:\\Users\\GameOn-DP\\Downloads\\andoid\\.cursor\\debug.log")
+            val logEntry = org.json.JSONObject().apply {
+                put("sessionId", "debug-session")
+                put("runId", "run1")
+                put("hypothesisId", "B")
+                put("location", "ApiClient.kt:sendLog:EXIT")
+                put("message", "sendLog completed")
+                put("data", org.json.JSONObject().apply {
+                    put("result", result ?: false)
+                })
+                put("timestamp", System.currentTimeMillis())
+            }
+            debugLog.appendText(logEntry.toString() + "\n")
+        } catch (e: Exception) { }
+        // #endregion
+        
+        return result ?: false
     }
 
     /**

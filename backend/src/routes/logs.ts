@@ -117,6 +117,24 @@ export async function logsRoutes(fastify: FastifyInstance) {
 
 
 export function broadcastLog(message: string, level: string = 'info') {
+  // #region agent log
+  try {
+    fetch('http://127.0.0.1:7242/ingest/e936d04e-f1a5-4fb8-85d4-855c19380a9b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        location: 'logs.ts:broadcastLog:ENTRY',
+        message: 'broadcastLog called',
+        data: { message: message.substring(0, 50), level, connectionsCount: activeConnections.size },
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+        runId: 'run1',
+        hypothesisId: 'C'
+      })
+    }).catch(() => {});
+  } catch (e) { }
+  // #endregion
+  
   const logData = {
     type: 'log',
     message,
@@ -138,6 +156,24 @@ export function broadcastLog(message: string, level: string = 'info') {
       activeConnections.delete(socket);
     }
   });
+  
+  // #region agent log
+  try {
+    fetch('http://127.0.0.1:7242/ingest/e936d04e-f1a5-4fb8-85d4-855c19380a9b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        location: 'logs.ts:broadcastLog:EXIT',
+        message: 'broadcastLog completed',
+        data: { sentCount, totalConnections: activeConnections.size },
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+        runId: 'run1',
+        hypothesisId: 'C'
+      })
+    }).catch(() => {});
+  } catch (e) { }
+  // #endregion
   
   if (sentCount > 0) {
     logger.debug({ sentCount, totalConnections: activeConnections.size }, 'Log broadcasted');

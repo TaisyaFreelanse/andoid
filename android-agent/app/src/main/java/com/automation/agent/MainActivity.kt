@@ -64,30 +64,91 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        try {
+            super.onCreate(savedInstanceState)
+            android.util.Log.e("MainActivity", "onCreate: Starting")
+            
+            try {
+                setContentView(R.layout.activity_main)
+                android.util.Log.e("MainActivity", "onCreate: Layout set")
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to set layout: ${e.message}", e)
+                // Show error message instead of crashing
+                setContentView(android.R.layout.simple_list_item_1)
+                val textView = findViewById<android.widget.TextView>(android.R.id.text1)
+                textView?.text = "Ошибка загрузки интерфейса: ${e.message}"
+                return
+            }
 
-        // Initialize views
-        initViews()
-        
-        // Initialize utilities
-        deviceInfo = DeviceInfo(this)
-        rootUtils = RootUtils()
-        
-        // Check and request permissions
-        checkPermissions()
-        
-        // Check overlay permission for WebView
-        checkOverlayPermission()
-        
-        // Display device info
-        displayDeviceInfo()
-        
-        // Check root status asynchronously (to avoid blocking UI)
-        checkRootStatusAsync()
-        
-        // Start service automatically
-        startControllerService()
+            // Initialize views
+            try {
+                initViews()
+                android.util.Log.e("MainActivity", "onCreate: Views initialized")
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to init views: ${e.message}", e)
+                // Continue anyway
+            }
+            
+            // Initialize utilities
+            try {
+                deviceInfo = DeviceInfo(this)
+                rootUtils = RootUtils()
+                android.util.Log.e("MainActivity", "onCreate: Utilities initialized")
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to init utilities: ${e.message}", e)
+                // Continue anyway
+            }
+            
+            // Check and request permissions
+            try {
+                checkPermissions()
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to check permissions: ${e.message}", e)
+            }
+            
+            // Check overlay permission for WebView
+            try {
+                checkOverlayPermission()
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to check overlay: ${e.message}", e)
+            }
+            
+            // Display device info
+            try {
+                displayDeviceInfo()
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to display device info: ${e.message}", e)
+            }
+            
+            // Check root status asynchronously (to avoid blocking UI)
+            try {
+                checkRootStatusAsync()
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to check root: ${e.message}", e)
+            }
+            
+            // Start service automatically
+            try {
+                startControllerService()
+                android.util.Log.e("MainActivity", "onCreate: Service started")
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "onCreate: Failed to start service: ${e.message}", e)
+            }
+            
+            android.util.Log.e("MainActivity", "onCreate: Completed successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "CRITICAL: onCreate failed: ${e.message}", e)
+            e.printStackTrace()
+            // Try to show error screen
+            try {
+                super.onCreate(savedInstanceState)
+                setContentView(android.R.layout.simple_list_item_1)
+                val textView = findViewById<android.widget.TextView>(android.R.id.text1)
+                textView?.text = "Ошибка запуска: ${e.message}"
+            } catch (e2: Exception) {
+                android.util.Log.e("MainActivity", "CRITICAL: Even error screen failed: ${e2.message}", e2)
+            }
+        }
     }
 
     private fun initViews() {

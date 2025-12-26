@@ -162,18 +162,33 @@ class UniquenessService(
      * Regenerate Android ID
      */
     suspend fun regenerateAndroidId(): Boolean {
-        Log.i(TAG, "Regenerating Android ID")
-        
-        val newId = generateRandomAndroidId()
-        val result = rootUtils.setSecureSetting("android_id", newId)
-        
-        if (result) {
-            Log.i(TAG, "Android ID regenerated: $newId")
-        } else {
-            Log.e(TAG, "Failed to regenerate Android ID")
+        return try {
+            Log.i(TAG, "Regenerating Android ID - START")
+            android.util.Log.e(TAG, "regenerateAndroidId: Starting operation")
+            
+            val newId = generateRandomAndroidId()
+            val result = try {
+                rootUtils.setSecureSetting("android_id", newId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to set Android ID: ${e.message}", e)
+                android.util.Log.e(TAG, "regenerateAndroidId: setSecureSetting failed: ${e.message}")
+                false
+            }
+            
+            if (result) {
+                Log.i(TAG, "Android ID regenerated: $newId")
+                android.util.Log.e(TAG, "regenerateAndroidId: Success, new ID=$newId")
+            } else {
+                Log.e(TAG, "Failed to regenerate Android ID")
+                android.util.Log.e(TAG, "regenerateAndroidId: Failed")
+            }
+            
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error in regenerateAndroidId: ${e.message}", e)
+            android.util.Log.e(TAG, "regenerateAndroidId: FATAL ERROR: ${e.message}\n${e.stackTraceToString().take(500)}")
+            false
         }
-        
-        return result
     }
 
     /**
@@ -196,28 +211,59 @@ class UniquenessService(
      * Regenerate AAID (Advertising ID)
      */
     suspend fun regenerateAaid(): Boolean {
-        Log.i(TAG, "Regenerating AAID")
-        
-        // Method 1: Clear Google Play Services advertising data
-        val clearGms = rootUtils.executeCommand(
-            "rm -rf /data/data/com.google.android.gms/shared_prefs/adid_settings.xml"
-        )
-        
-        // Method 2: Clear advertising ID from GMS
-        val clearAdId = rootUtils.executeCommand(
-            "rm -rf /data/data/com.google.android.gms/databases/adid_settings.db*"
-        )
-        
-        // Method 3: Force stop GMS to regenerate
-        rootUtils.forceStopApp(GMS_PACKAGE)
-        
-        // Method 4: Delete advertising ID cache
-        rootUtils.executeCommand(
-            "rm -rf /data/data/com.google.android.gms/files/ads_*"
-        )
-        
-        Log.i(TAG, "AAID reset initiated (will regenerate on next GMS access)")
-        return clearGms.success || clearAdId.success
+        return try {
+            Log.i(TAG, "Regenerating AAID - START")
+            android.util.Log.e(TAG, "regenerateAaid: Starting operation")
+            
+            // Method 1: Clear Google Play Services advertising data
+            val clearGms = try {
+                rootUtils.executeCommand(
+                    "rm -rf /data/data/com.google.android.gms/shared_prefs/adid_settings.xml"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear GMS shared_prefs: ${e.message}")
+                android.util.Log.e(TAG, "regenerateAaid: clearGms failed: ${e.message}")
+                com.automation.agent.utils.RootUtils.CommandResult(success = false, output = "", error = e.message ?: "")
+            }
+            
+            // Method 2: Clear advertising ID from GMS
+            val clearAdId = try {
+                rootUtils.executeCommand(
+                    "rm -rf /data/data/com.google.android.gms/databases/adid_settings.db*"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear GMS databases: ${e.message}")
+                android.util.Log.e(TAG, "regenerateAaid: clearAdId failed: ${e.message}")
+                com.automation.agent.utils.RootUtils.CommandResult(success = false, output = "", error = e.message ?: "")
+            }
+            
+            // Method 3: Force stop GMS to regenerate (non-critical)
+            try {
+                rootUtils.forceStopApp(GMS_PACKAGE)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to force stop GMS: ${e.message}")
+                // Continue
+            }
+            
+            // Method 4: Delete advertising ID cache (non-critical)
+            try {
+                rootUtils.executeCommand(
+                    "rm -rf /data/data/com.google.android.gms/files/ads_*"
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete ads cache: ${e.message}")
+                // Continue
+            }
+            
+            val success = clearGms.success || clearAdId.success
+            Log.i(TAG, "AAID reset initiated: $success")
+            android.util.Log.e(TAG, "regenerateAaid: Completed with result=$success")
+            success
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error in regenerateAaid: ${e.message}", e)
+            android.util.Log.e(TAG, "regenerateAaid: FATAL ERROR: ${e.message}\n${e.stackTraceToString().take(500)}")
+            false
+        }
     }
 
     // ==================== Chrome/WebView Data ====================
@@ -226,54 +272,104 @@ class UniquenessService(
      * Clear Chrome data
      */
     suspend fun clearChromeData(): Boolean {
-        Log.i(TAG, "Clearing Chrome data")
-        
-        // Force stop Chrome first
-        rootUtils.forceStopApp(CHROME_PACKAGE)
-        delay(500)
-        
-        // Clear app data via pm
-        val pmClear = rootUtils.clearAppData(CHROME_PACKAGE)
-        
-        // Additionally delete specific folders
-        val deleteFolders = listOf(
-            "$CHROME_DATA_PATH/cache",
-            "$CHROME_DATA_PATH/app_chrome/Default/Cookies",
-            "$CHROME_DATA_PATH/app_chrome/Default/History",
-            "$CHROME_DATA_PATH/app_chrome/Default/Login Data",
-            "$CHROME_DATA_PATH/app_chrome/Default/Web Data",
-            "$CHROME_DATA_PATH/shared_prefs"
-        )
-        
-        for (folder in deleteFolders) {
-            rootUtils.deleteDirectory(folder)
+        return try {
+            Log.i(TAG, "Clearing Chrome data - START")
+            android.util.Log.e(TAG, "clearChromeData: Starting operation")
+            
+            // Force stop Chrome first
+            try {
+                rootUtils.forceStopApp(CHROME_PACKAGE)
+                delay(500)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to force stop Chrome: ${e.message}", e)
+                android.util.Log.e(TAG, "clearChromeData: Force stop failed: ${e.message}")
+            }
+            
+            // Clear app data via pm
+            val pmClear = try {
+                rootUtils.clearAppData(CHROME_PACKAGE)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear Chrome app data: ${e.message}", e)
+                android.util.Log.e(TAG, "clearChromeData: pm clear failed: ${e.message}")
+                false
+            }
+            
+            // Additionally delete specific folders (non-critical, continue even if fails)
+            val deleteFolders = listOf(
+                "$CHROME_DATA_PATH/cache",
+                "$CHROME_DATA_PATH/app_chrome/Default/Cookies",
+                "$CHROME_DATA_PATH/app_chrome/Default/History",
+                "$CHROME_DATA_PATH/app_chrome/Default/Login Data",
+                "$CHROME_DATA_PATH/app_chrome/Default/Web Data",
+                "$CHROME_DATA_PATH/shared_prefs"
+            )
+            
+            for (folder in deleteFolders) {
+                try {
+                    rootUtils.deleteDirectory(folder)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to delete folder $folder: ${e.message}")
+                    // Continue with other folders
+                }
+            }
+            
+            Log.i(TAG, "Chrome data cleared: $pmClear")
+            android.util.Log.e(TAG, "clearChromeData: Completed with result=$pmClear")
+            pmClear
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error in clearChromeData: ${e.message}", e)
+            android.util.Log.e(TAG, "clearChromeData: FATAL ERROR: ${e.message}\n${e.stackTraceToString().take(500)}")
+            false
         }
-        
-        Log.i(TAG, "Chrome data cleared: $pmClear")
-        return pmClear
     }
 
     /**
      * Clear WebView data
      */
     suspend fun clearWebViewData(): Boolean {
-        Log.i(TAG, "Clearing WebView data")
-        
-        // Clear WebView app data
-        val pmClear = rootUtils.clearAppData(WEBVIEW_PACKAGE)
-        
-        // Delete WebView cache for all apps
-        val result = rootUtils.executeCommand(
-            "find $APP_DATA_PATH -name 'webview*' -type d -exec rm -rf {} +"
-        )
-        
-        // Clear WebView cache in app's own directory
-        val appPackage = context.packageName
-        rootUtils.deleteDirectory("$APP_DATA_PATH/$appPackage/cache/WebView")
-        rootUtils.deleteDirectory("$APP_DATA_PATH/$appPackage/app_webview")
-        
-        Log.i(TAG, "WebView data cleared")
-        return pmClear || result.success
+        return try {
+            Log.i(TAG, "Clearing WebView data - START")
+            android.util.Log.e(TAG, "clearWebViewData: Starting operation")
+            
+            // Clear WebView app data
+            val pmClear = try {
+                rootUtils.clearAppData(WEBVIEW_PACKAGE)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear WebView app data: ${e.message}", e)
+                android.util.Log.e(TAG, "clearWebViewData: pm clear failed: ${e.message}")
+                false
+            }
+            
+            // Delete WebView cache for all apps (non-critical)
+            val result = try {
+                rootUtils.executeCommand(
+                    "find $APP_DATA_PATH -name 'webview*' -type d -exec rm -rf {} +"
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to execute find command: ${e.message}")
+                android.util.Log.w(TAG, "clearWebViewData: find command failed: ${e.message}")
+                com.automation.agent.utils.RootUtils.CommandResult(success = false, output = "", error = e.message ?: "")
+            }
+            
+            // Clear WebView cache in app's own directory (non-critical)
+            try {
+                val appPackage = context.packageName
+                rootUtils.deleteDirectory("$APP_DATA_PATH/$appPackage/cache/WebView")
+                rootUtils.deleteDirectory("$APP_DATA_PATH/$appPackage/app_webview")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete app WebView directories: ${e.message}")
+                // Continue
+            }
+            
+            val success = pmClear || result.success
+            Log.i(TAG, "WebView data cleared: $success")
+            android.util.Log.e(TAG, "clearWebViewData: Completed with result=$success")
+            success
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error in clearWebViewData: ${e.message}", e)
+            android.util.Log.e(TAG, "clearWebViewData: FATAL ERROR: ${e.message}\n${e.stackTraceToString().take(500)}")
+            false
+        }
     }
 
     /**

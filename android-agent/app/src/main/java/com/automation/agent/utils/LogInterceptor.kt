@@ -173,6 +173,49 @@ object LogInterceptor {
             logQueue.poll() // Remove oldest
         }
         logQueue.offer(LogEntry(level, tag, message))
+        
+        // CRITICAL: For important logs, send immediately to ensure they reach backend
+        // This is especially important for errors and warnings that might indicate crashes
+        if (level == "error" || level == "warn" || 
+            importantTags.any { tag.contains(it, ignoreCase = true) } ||
+            message.contains("executeUniquenessTask", ignoreCase = true) ||
+            message.contains("CONFIG STRUCTURE", ignoreCase = true)) {
+            scope.launch {
+                try {
+                    sendLogImmediately(level, tag, message)
+                } catch (e: Exception) {
+                    // Silently fail - will be sent in batch later
+                }
+            }
+        }
+    }
+    
+    /**
+     * Send log immediately (for critical logs that must reach backend)
+     */
+    private suspend fun sendLogImmediately(level: String, tag: String, message: String) {
+        val client = apiClient
+        val devId = deviceId
+        
+        // Try to get deviceId from ApiClient if not set yet
+        val finalDeviceId = devId ?: try {
+            val deviceIdField = client?.javaClass?.getDeclaredField("storedDeviceId")
+            deviceIdField?.isAccessible = true
+            deviceIdField?.get(client) as? String
+        } catch (e: Exception) {
+            null
+        }
+        
+        if (client == null || finalDeviceId == null) {
+            // Will be sent in batch later when deviceId is available
+            return
+        }
+        
+        try {
+            client.sendLog(level, tag, message)
+        } catch (e: Exception) {
+            // Silently fail - will be sent in batch later
+        }
     }
     
     /**
