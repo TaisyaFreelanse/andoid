@@ -64,8 +64,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // CRITICAL: Log immediately BEFORE anything else
+        android.util.Log.e("MainActivity", "=== MainActivity.onCreate() STARTED ===")
+        android.util.Log.e("MainActivity", "Thread: ${Thread.currentThread().name}")
+        android.util.Log.e("MainActivity", "Intent: ${intent?.action}")
         try {
+            android.util.Log.e("MainActivity", "Calling super.onCreate()...")
             super.onCreate(savedInstanceState)
+            android.util.Log.e("MainActivity", "super.onCreate() completed")
             android.util.Log.e("MainActivity", "onCreate: Starting")
             
             try {
@@ -136,8 +142,11 @@ class MainActivity : AppCompatActivity() {
             }
             
             android.util.Log.e("MainActivity", "onCreate: Completed successfully")
+            android.util.Log.e("MainActivity", "=== MainActivity.onCreate() COMPLETED SUCCESSFULLY ===")
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "CRITICAL: onCreate failed: ${e.message}", e)
+            android.util.Log.e("MainActivity", "=== CRITICAL EXCEPTION in MainActivity.onCreate() ===")
+            android.util.Log.e("MainActivity", "Error: ${e.message}", e)
+            android.util.Log.e("MainActivity", "Exception class: ${e.javaClass.name}")
             e.printStackTrace()
             // Try to show error screen
             try {

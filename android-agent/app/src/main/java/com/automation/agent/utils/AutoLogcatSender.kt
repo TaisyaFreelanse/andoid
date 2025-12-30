@@ -176,9 +176,9 @@ class AutoLogcatSender(
                 "^(\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+([VDIWEF])/([^:]+):\\s+(.*)$"
             )
             
-            var line: String?
+            var line: String? = null
             while (isRunning && reader.readLine().also { line = it } != null) {
-                line?.let { logLine ->
+                val logLine = line ?: continue
                     try {
                         val matcher = logPattern.matcher(logLine)
                         if (matcher.find()) {
@@ -227,7 +227,6 @@ class AutoLogcatSender(
                     } catch (e: Exception) {
                         // Silently ignore parsing errors
                     }
-                }
             }
             
             reader.close()

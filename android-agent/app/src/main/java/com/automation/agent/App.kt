@@ -27,21 +27,36 @@ class App : Application() {
     private var deviceId: String? = null
     
     override fun onCreate() {
+        // CRITICAL: Log immediately using android.util.Log BEFORE anything else
+        android.util.Log.e("App", "=== App.onCreate() STARTED ===")
+        android.util.Log.e("App", "Thread: ${Thread.currentThread().name}")
         try {
+            android.util.Log.e("App", "Calling super.onCreate()...")
             super.onCreate()
-            Log.i(TAG, "Application.onCreate() started")
+            android.util.Log.e("App", "super.onCreate() completed")
             
+            android.util.Log.e("App", "Setting instance...")
             instance = this
+            android.util.Log.e("App", "Instance set")
+            
+            Log.i(TAG, "Application.onCreate() started")
             Log.i(TAG, "Application instance set")
             
             // Initialize coroutine scope after super.onCreate() to ensure system is ready
+            // Use IO dispatcher to avoid potential issues with Main dispatcher
             try {
-                applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-                Log.i(TAG, "Coroutine scope initialized")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to initialize coroutine scope: ${e.message}, using IO dispatcher", e)
-                // Fallback to IO dispatcher if Main is not available
                 applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                Log.i(TAG, "Coroutine scope initialized with IO dispatcher")
+            } catch (e: Exception) {
+                Log.e(TAG, "CRITICAL: Failed to initialize coroutine scope: ${e.message}", e)
+                // Try to create minimal scope as last resort
+                try {
+                    applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+                    Log.w(TAG, "Coroutine scope initialized with Default dispatcher as fallback")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "CRITICAL: Even fallback coroutine scope failed: ${e2.message}", e2)
+                    // Don't set applicationScope - it will be null, but app should still start
+                }
             }
             
             // Set up global uncaught exception handler
@@ -56,9 +71,12 @@ class App : Application() {
             }
             
             Log.i(TAG, "Application initialized successfully")
+            android.util.Log.e("App", "=== App.onCreate() COMPLETED SUCCESSFULLY ===")
         } catch (e: Exception) {
-            Log.e(TAG, "CRITICAL: Exception in Application.onCreate(): ${e.message}", e)
+            android.util.Log.e("App", "CRITICAL EXCEPTION in App.onCreate(): ${e.message}", e)
+            android.util.Log.e("App", "Stack trace:", e)
             e.printStackTrace()
+            Log.e(TAG, "CRITICAL: Exception in Application.onCreate(): ${e.message}", e)
             // Don't re-throw - let app try to start anyway
             // Re-throwing will prevent app from starting at all
         }

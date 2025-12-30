@@ -33,12 +33,10 @@ object LogInterceptor {
         "TASK EXECUTION"
     )
     
-    companion object {
-        private const val TAG = "LogInterceptor"
-        private const val BATCH_SIZE = 20
-        private const val BATCH_INTERVAL_MS = 2000L
-        private const val MAX_QUEUE_SIZE = 1000
-    }
+    private const val TAG = "LogInterceptor"
+    private const val BATCH_SIZE = 20
+    private const val BATCH_INTERVAL_MS = 2000L
+    private const val MAX_QUEUE_SIZE = 1000
     
     data class LogEntry(
         val level: String,

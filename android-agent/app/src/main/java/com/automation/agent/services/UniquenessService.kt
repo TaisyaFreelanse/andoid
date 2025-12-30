@@ -436,25 +436,56 @@ class UniquenessService(
     // ==================== Timezone ====================
 
     /**
-     * Change timezone
+     * Change timezone with multiple methods for Android 12+
      */
     suspend fun changeTimezone(timezone: String): Boolean {
         Log.i(TAG, "Changing timezone to: $timezone")
+        var success = false
         
-        // Disable auto timezone
-        rootUtils.setGlobalSetting("auto_time_zone", "0")
+        try {
+            // 1. Disable auto timezone first
+            rootUtils.setGlobalSetting("auto_time_zone", "0")
+            rootUtils.setSecureSetting("auto_time_zone", "0")
+            
+            // 2. Set timezone via system property (most reliable with root)
+            val propResult = rootUtils.executeCommand("setprop persist.sys.timezone \"$timezone\"")
+            Log.i(TAG, "setprop result: ${propResult.success}, output: ${propResult.output}")
+            
+            // 3. Set via global settings (for Android 12+)
+            val globalResult = rootUtils.setGlobalSetting("time_zone", timezone)
+            Log.i(TAG, "global setting result: $globalResult")
+            
+            // 4. Set via secure settings (backup method)
+            rootUtils.setSecureSetting("timezone", timezone)
+            
+            // 5. Use AlarmManager service call (Android's internal method)
+            // service call alarm 3 s16 <timezone> - sets timezone via IAlarmManager
+            val alarmResult = rootUtils.executeCommand("service call alarm 3 s16 \"$timezone\"")
+            Log.i(TAG, "alarm service result: ${alarmResult.success}, output: ${alarmResult.output}")
+            
+            // 6. Alternative: use 'am broadcast' to notify timezone change
+            rootUtils.executeCommand("am broadcast -a android.intent.action.TIMEZONE_CHANGED --es time-zone \"$timezone\"")
+            
+            // 7. Force timezone using native command (if available)
+            rootUtils.executeCommand("toybox date -u")
+            
+            // Verify the change
+            delay(500)
+            val currentTz = getCurrentTimezone()
+            success = currentTz == timezone
+            
+            Log.i(TAG, "Timezone change complete. Expected: $timezone, Current: $currentTz, Success: $success")
+            
+            if (!success) {
+                // Last resort: try to restart zygote to apply changes (careful - this will restart all apps)
+                Log.w(TAG, "Timezone change may require reboot to fully apply")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error changing timezone: ${e.message}", e)
+        }
         
-        // Set timezone
-        val result = rootUtils.setSystemSetting("time_zone", timezone)
-        
-        // Also set via property
-        rootUtils.setProperty("persist.sys.timezone", timezone)
-        
-        // Set via service
-        rootUtils.executeCommand("service call alarm 3 s16 $timezone")
-        
-        Log.i(TAG, "Timezone changed to: $timezone, result: $result")
-        return result
+        return success
     }
 
     /**

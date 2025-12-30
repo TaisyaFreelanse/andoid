@@ -185,11 +185,11 @@ export async function agentRoutes(fastify: FastifyInstance) {
         } else if (configJson?.steps) {
           // For other task types, use steps directly
           steps = configJson.steps.map((step: any) => {
-            const { type, ...stepConfig } = step; // Separate type from other fields
-            return {
-              type: type,
-              config: stepConfig, // All other fields go into config
-            };
+          const { type, ...stepConfig } = step; // Separate type from other fields
+          return {
+            type: type,
+            config: stepConfig, // All other fields go into config
+          };
           });
         }
         
