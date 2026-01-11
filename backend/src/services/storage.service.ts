@@ -338,7 +338,8 @@ export class StorageService {
   generateScreenshotPath(deviceId: string, taskId: string, timestamp: Date): string {
     const date = timestamp.toISOString().split('T')[0];
     const time = timestamp.toISOString().replace(/[:.]/g, '-');
-    return `screenshots/${deviceId}/${taskId}/${date}/${time}.png`;
+    // Path inside bucket (bucket is already named 'screenshots')
+    return `${deviceId}/${taskId}/${date}/${time}.png`;
   }
 
   generateArtifactPath(type: string, id: string, filename: string): string {
