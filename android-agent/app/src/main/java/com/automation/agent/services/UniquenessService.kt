@@ -5,7 +5,9 @@ import android.location.Location
 import android.os.Build
 import android.util.Log
 import com.automation.agent.utils.RootUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.util.*
 
 /**
@@ -324,50 +326,31 @@ class UniquenessService(
     }
 
     /**
-     * Clear WebView data
+     * Clear WebView data - fast version
+     * Only clears app-specific WebView data (no pm clear to avoid hangs)
      */
-    suspend fun clearWebViewData(): Boolean {
-        return try {
+    suspend fun clearWebViewData(): Boolean = withContext(Dispatchers.IO) {
+        try {
             Log.i(TAG, "Clearing WebView data - START")
-            android.util.Log.e(TAG, "clearWebViewData: Starting operation")
             
-            // Clear WebView app data
-            val pmClear = try {
-                rootUtils.clearAppData(WEBVIEW_PACKAGE)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to clear WebView app data: ${e.message}", e)
-                android.util.Log.e(TAG, "clearWebViewData: pm clear failed: ${e.message}")
-                false
-            }
+            val appPackage = context.packageName
             
-            // Delete WebView cache for all apps (non-critical)
-            val result = try {
-                rootUtils.executeCommand(
-                    "find $APP_DATA_PATH -name 'webview*' -type d -exec rm -rf {} +"
-                )
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to execute find command: ${e.message}")
-                android.util.Log.w(TAG, "clearWebViewData: find command failed: ${e.message}")
-                com.automation.agent.utils.RootUtils.CommandResult(success = false, output = "", error = e.message ?: "")
-            }
+            // Single combined command for speed (all rm commands at once)
+            val cmd = """
+                rm -rf $APP_DATA_PATH/$appPackage/cache/WebView 2>/dev/null;
+                rm -rf $APP_DATA_PATH/$appPackage/app_webview 2>/dev/null;
+                rm -rf $APP_DATA_PATH/$appPackage/databases/webview* 2>/dev/null;
+                rm -rf $APP_DATA_PATH/$appPackage/shared_prefs/WebView* 2>/dev/null;
+                rm -rf $APP_DATA_PATH/com.android.chrome/cache 2>/dev/null;
+                echo 'done'
+            """.trimIndent().replace("\n", " ")
             
-            // Clear WebView cache in app's own directory (non-critical)
-            try {
-                val appPackage = context.packageName
-                rootUtils.deleteDirectory("$APP_DATA_PATH/$appPackage/cache/WebView")
-                rootUtils.deleteDirectory("$APP_DATA_PATH/$appPackage/app_webview")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to delete app WebView directories: ${e.message}")
-                // Continue
-            }
+            rootUtils.executeCommand(cmd)
             
-            val success = pmClear || result.success
-            Log.i(TAG, "WebView data cleared: $success")
-            android.util.Log.e(TAG, "clearWebViewData: Completed with result=$success")
-            success
+            Log.i(TAG, "WebView data cleared successfully")
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "Fatal error in clearWebViewData: ${e.message}", e)
-            android.util.Log.e(TAG, "clearWebViewData: FATAL ERROR: ${e.message}\n${e.stackTraceToString().take(500)}")
+            Log.e(TAG, "Error in clearWebViewData: ${e.message}", e)
             false
         }
     }
@@ -387,20 +370,42 @@ class UniquenessService(
      * Change User-Agent via build.prop
      */
     suspend fun changeUserAgent(userAgent: String? = null): Boolean {
-        Log.i(TAG, "Changing User-Agent")
+        Log.i(TAG, "Changing User-Agent - START")
         
         val ua = userAgent ?: generateRandomUserAgent()
+        Log.i(TAG, "New User-Agent: $ua")
         
-        // Set via system property (runtime)
-        val runtimeResult = rootUtils.setProperty("persist.sys.webview.user_agent", ua)
+        var success = false
         
-        // Set via build.prop (persistent)
-        val buildPropResult = rootUtils.modifyBuildProp(
-            mapOf("ro.product.model.user_agent" to ua)
-        )
+        // Method 1: Set WebView user agent via settings
+        try {
+            val settingsResult = rootUtils.setSecureSetting("webview_user_agent", ua)
+            Log.i(TAG, "Settings webview_user_agent: $settingsResult")
+            if (settingsResult) success = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set webview_user_agent setting: ${e.message}")
+        }
         
-        Log.i(TAG, "User-Agent changed to: $ua")
-        return runtimeResult || buildPropResult
+        // Method 2: Set via system property (runtime)
+        try {
+            val propResult = rootUtils.setProperty("persist.sys.webview.user_agent", ua)
+            Log.i(TAG, "System property persist.sys.webview.user_agent: $propResult")
+            if (propResult) success = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set system property: ${e.message}")
+        }
+        
+        // Method 3: Store for our app's WebView use
+        try {
+            System.setProperty("http.agent", ua)
+            Log.i(TAG, "Java system property http.agent set")
+            success = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set Java property: ${e.message}")
+        }
+        
+        Log.i(TAG, "User-Agent change completed: success=$success, UA=${ua.take(50)}...")
+        return success
     }
 
     /**

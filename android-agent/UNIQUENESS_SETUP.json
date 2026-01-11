@@ -1,78 +1,186 @@
 {
-  "id": "uniqueness-setup-scenario",
-  "name": "Уникализация устройства: прокси, гео, таймзона, язык",
-  "description": "Настройка прокси, подмена геолокации, установка таймзоны и языка устройства перед парсингом",
-  "version": "1.0",
+  "id": "full-uniqueness-parsing-scenario",
+  "name": "Полная уникализация + парсинг Google",
+  "description": "Установка прокси, подмена гео/таймзоны/языка, парсинг Google, клики по ссылкам, регенерация параметров",
+  "version": "2.0",
   "type": "uniqueness",
   "requires_root": true,
-  "timeout": 180000,
+  "timeout": 300000,
+  "repeat": true,
+  "repeat_count": -1,
+  "repeat_delay_ms": 60000,
+  
+  "proxies": [
+    {
+      "id": "proxy1",
+      "type": "socks5",
+      "host": "x398.fxdx.in",
+      "port": 18577,
+      "username": "bmusproxy023054",
+      "password": "n6zpj7v773wa",
+      "country": "US",
+      "state": "California",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy2",
+      "type": "socks5",
+      "host": "x356.fxdx.in",
+      "port": 14517,
+      "username": "bmusproxy294603",
+      "password": "pkrygbfbby73",
+      "country": "US",
+      "state": "Texas",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy3",
+      "type": "socks5",
+      "host": "x468.fxdx.in",
+      "port": 13873,
+      "username": "bmusproxy054045",
+      "password": "s35cbq2gnmvv",
+      "country": "US",
+      "state": "New York",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy4",
+      "type": "socks5",
+      "host": "x343.fxdx.in",
+      "port": 14653,
+      "username": "bmusproxy233723",
+      "password": "dmsbx95cn5sr",
+      "country": "US",
+      "state": "Florida",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy5",
+      "type": "socks5",
+      "host": "x335.fxdx.in",
+      "port": 14613,
+      "username": "bmusproxy285133",
+      "password": "Rc4uFGanCj0e",
+      "country": "US",
+      "state": "Illinois",
+      "rotation_minutes": 10
+    }
+  ],
+
   "config": {
     "backup_before": true,
     "reboot_after": false,
     "verify_changes": true,
     "auto_detect_country": true,
-    "use_proxy_geolocation": true
+    "use_proxy_geolocation": true,
+    "proxy_selection": "random",
+    "browser": "webview"
   },
+
   "actions": [
     {
-      "id": "action1",
-      "type": "regenerate_android_id",
-      "description": "Регенерация Android ID"
+      "id": "step1_setup_proxy",
+      "type": "setup_proxy",
+      "proxy": "random",
+      "description": "Шаг 1: Установка случайного SOCKS5 прокси"
     },
     {
-      "id": "action2",
-      "type": "regenerate_aaid",
-      "description": "Регенерация AAID (Advertising ID)"
+      "id": "step2_detect_proxy_location",
+      "type": "detect_proxy_location",
+      "description": "Шаг 2: Определение геолокации прокси (город, штат, координаты)"
     },
     {
-      "id": "action3",
-      "type": "change_user_agent",
-      "ua": "random",
-      "description": "Изменение User-Agent на случайный"
-    },
-    {
-      "id": "action4",
+      "id": "step3_change_timezone",
       "type": "change_timezone",
       "timezone": "auto",
-      "country_code": "auto",
-      "description": "Установка таймзоны на основе прокси (автоматически)"
+      "country_code": "US",
+      "description": "Шаг 3: Установка таймзоны на основе прокси (авто)"
     },
     {
-      "id": "action5",
+      "id": "step4_change_location",
       "type": "change_location",
       "latitude": "auto",
       "longitude": "auto",
-      "description": "Установка геолокации на основе прокси (автоматически)"
+      "description": "Шаг 4: Подмена геолокации на основе прокси"
     },
     {
-      "id": "action6",
+      "id": "step5_change_locale",
       "type": "change_locale",
-      "locale": "auto",
-      "description": "Установка языка на основе геолокации (автоматически)"
+      "locale": "en_US",
+      "description": "Шаг 5: Установка английского языка (США)"
     },
     {
-      "id": "action7",
-      "type": "clear_chrome_data",
-      "description": "Очистка данных Chrome"
-    },
-    {
-      "id": "action8",
+      "id": "step6_clear_browser_data",
       "type": "clear_webview_data",
-      "description": "Очистка данных WebView"
+      "description": "Шаг 6: Очистка данных WebView/браузера"
     },
     {
-      "id": "action9",
+      "id": "step7_open_google",
+      "type": "open_url",
+      "url": "https://www.google.com",
+      "wait_ms": 3000,
+      "description": "Шаг 7: Открытие Google"
+    },
+    {
+      "id": "step8_google_search",
+      "type": "google_search",
+      "query": "site:pickuplineinsider.com",
+      "wait_ms": 5000,
+      "description": "Шаг 8: Поиск в Google"
+    },
+    {
+      "id": "step9_click_random_result",
+      "type": "click_search_result",
+      "result_index": "random",
+      "wait_ms": 5000,
+      "description": "Шаг 9: Клик по случайной ссылке из результатов"
+    },
+    {
+      "id": "step10_browse_page",
+      "type": "browse_page",
+      "scroll": true,
+      "scroll_count": 3,
+      "stay_time_ms": 10000,
+      "description": "Шаг 10: Просмотр страницы (скролл, задержка)"
+    },
+    {
+      "id": "step11_regenerate_android_id",
+      "type": "regenerate_android_id",
+      "description": "Шаг 11: Регенерация Android ID"
+    },
+    {
+      "id": "step12_regenerate_aaid",
+      "type": "regenerate_aaid",
+      "description": "Шаг 12: Регенерация AAID (Advertising ID)"
+    },
+    {
+      "id": "step13_change_user_agent",
+      "type": "change_user_agent",
+      "ua": "random",
+      "description": "Шаг 13: Изменение User-Agent на случайный"
+    },
+    {
+      "id": "step14_modify_fingerprint",
       "type": "modify_fingerprint",
-      "description": "Изменение fingerprint устройства"
+      "description": "Шаг 14: Изменение fingerprint устройства"
     }
   ],
+
   "post_process": {
     "verify_android_id_changed": true,
     "verify_user_agent_changed": true,
     "verify_timezone_matches_proxy": true,
     "verify_location_matches_proxy": true,
     "log_new_fingerprint": true,
-    "send_to_backend": true
+    "send_to_backend": true,
+    "screenshot_after": true
+  },
+
+  "error_handling": {
+    "continue_on_error": true,
+    "max_retries": 3,
+    "retry_delay_ms": 5000,
+    "notify_on_failure": true
   }
 }
-

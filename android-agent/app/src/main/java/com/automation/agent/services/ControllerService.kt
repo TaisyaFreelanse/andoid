@@ -19,9 +19,11 @@ import com.automation.agent.R
 import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
 import com.automation.agent.utils.AutoLogcatSender
+import com.automation.agent.utils.BrowserAutomation
 import com.automation.agent.utils.DeviceInfo
 import com.automation.agent.utils.LogInterceptor
 import com.automation.agent.utils.RootUtils
+import com.automation.agent.utils.ProxyManager as SocksProxyManager
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -67,6 +69,9 @@ class ControllerService : LifecycleService() {
     private lateinit var uniquenessService: UniquenessService
     private lateinit var rootUtils: RootUtils
     private var autoLogcatSender: AutoLogcatSender? = null
+    private var socksProxyManager: SocksProxyManager? = null
+    private var browserAutomation: BrowserAutomation? = null
+    private var searchResults: List<BrowserAutomation.SearchResult> = emptyList()
     
     private var deviceId: String? = null
     private val isRegistered = AtomicBoolean(false)
@@ -172,6 +177,14 @@ class ControllerService : LifecycleService() {
             try {
         uniquenessService = UniquenessService(this, rootUtils)
                 Log.i(TAG, "UniquenessService initialized successfully")
+                
+                // Initialize SOCKS5 proxy manager
+                socksProxyManager = SocksProxyManager(this, rootUtils)
+                Log.i(TAG, "SocksProxyManager initialized")
+                
+                // Initialize browser automation
+                browserAutomation = BrowserAutomation(this, socksProxyManager)
+                Log.i(TAG, "BrowserAutomation initialized")
             } catch (e: Exception) {
                 Log.e(TAG, "CRITICAL: Failed to initialize UniquenessService: ${e.message}", e)
                 // Don't crash - set to null and handle later
@@ -995,8 +1008,8 @@ class ControllerService : LifecycleService() {
             safeSendLog("info", TAG, "Starting uniqueness task: ${task.id}")
             
             LogInterceptor.i(TAG, "Updating task status to 'running'...")
-            try {
-                apiClient.updateTaskStatus(task.id, "running")
+        try {
+            apiClient.updateTaskStatus(task.id, "running")
                 LogInterceptor.i(TAG, "Task status updated to 'running' successfully")
             } catch (e: Exception) {
                 LogInterceptor.e(TAG, "Failed to update task status: ${e.message}", e)
@@ -1223,32 +1236,32 @@ class ControllerService : LifecycleService() {
                     }
                     
                     val actionResult = try {
-                        when (actionType) {
-                            "regenerate_android_id" -> {
+                when (actionType) {
+                    "regenerate_android_id" -> {
                                 uniquenessService.regenerateAndroidId()
-                            }
-                            "regenerate_aaid" -> {
+                    }
+                    "regenerate_aaid" -> {
                                 uniquenessService.regenerateAaid()
-                            }
-                            "clear_chrome_data" -> {
+                    }
+                    "clear_chrome_data" -> {
                                 uniquenessService.clearChromeData()
-                            }
-                            "clear_webview_data" -> {
+                    }
+                    "clear_webview_data" -> {
                                 uniquenessService.clearWebViewData()
-                            }
-                            "change_user_agent" -> {
-                                val ua = action["ua"] as? String
+                    }
+                    "change_user_agent" -> {
+                        val ua = action["ua"] as? String
                                 uniquenessService.changeUserAgent(
-                                    if (ua == "random") null else ua
-                                )
-                            }
-                            "change_timezone" -> {
-                                val tz = action["timezone"] as? String
+                            if (ua == "random") null else ua
+                        )
+                    }
+                    "change_timezone" -> {
+                        val tz = action["timezone"] as? String
                                 val countryCode = action["country_code"] as? String
                                 if (tz == "random" || tz == "auto") {
                                     val country = countryCode ?: "US"
                                     uniquenessService.changeTimezoneByCountry(country)
-                                } else if (tz != null) {
+                        } else if (tz != null) {
                                     uniquenessService.changeTimezone(tz)
                                 } else {
                                     false
@@ -1266,20 +1279,15 @@ class ControllerService : LifecycleService() {
                                     uniquenessService.changeLocation(lat.toDouble(), lng.toDouble())
                                 } else {
                                     false
-                                }
-                            }
-                            "modify_build_prop" -> {
-                                @Suppress("UNCHECKED_CAST")
-                                val params = action["params"] as? Map<String, String> ?: emptyMap()
+                        }
+                    }
+                    "modify_build_prop" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val params = action["params"] as? Map<String, String> ?: emptyMap()
                                 uniquenessService.modifyBuildProp(params)
                             }
-                            "detect_proxy_location" -> {
-                                // This action doesn't return boolean, handle separately
-                                LogInterceptor.i(TAG, "detect_proxy_location action - skipping (not implemented)")
-                                safeSendLog("info", TAG, "detect_proxy_location action - skipping (not implemented)")
-                                true
-                            }
-                            "change_locale" -> {
+                            // detect_proxy_location is now implemented in the NEW ACTIONS section below
+                    "change_locale" -> {
                                 val locale = action["locale"] as? String
                                 val countryCode = action["country_code"] as? String
                                 try {
@@ -1313,34 +1321,270 @@ class ControllerService : LifecycleService() {
                                     false
                                 }
                             }
-                            "modify_fingerprint" -> {
+                    "modify_fingerprint" -> {
                                 try {
-                                    // Modify fingerprint is a complex operation - for now, just log it
-                                    LogInterceptor.i(TAG, "modify_fingerprint action - executing basic fingerprint modification")
-                                    safeSendLog("info", TAG, "modify_fingerprint action - executing basic fingerprint modification")
-                                    // This could involve multiple operations like changing build.prop, device ID, etc.
-                                    // For now, we'll do a basic modification
-                                    val params = (action["params"] as? Map<String, String>) ?: emptyMap()
-                                    uniquenessService.modifyBuildProp(params)
+                                    LogInterceptor.i(TAG, "modify_fingerprint action - executing full fingerprint modification")
+                                    safeSendLog("info", TAG, "modify_fingerprint action - executing full fingerprint modification")
+                                    
+                                    // Generate random fingerprint parameters
+                                    val randomBuildId = "R" + (1..3).map { ('A'..'Z').random() }.joinToString("") + 
+                                        "." + (100000..999999).random() + "." + (100..999).random()
+                                    val randomSerial = (1..16).map { "0123456789ABCDEF".random() }.joinToString("")
+                                    
+                                    val fingerprintParams = mapOf(
+                                        "ro.build.id" to randomBuildId,
+                                        "ro.build.display.id" to randomBuildId,
+                                        "ro.serialno" to randomSerial,
+                                        "ro.boot.serialno" to randomSerial
+                                    )
+                                    
+                                    val result = uniquenessService.modifyBuildProp(fingerprintParams)
+                                    LogInterceptor.i(TAG, "Fingerprint modification result: $result, buildId: $randomBuildId")
+                                    safeSendLog("info", TAG, "Fingerprint modified: buildId=$randomBuildId")
+                                    result
                                 } catch (e: Exception) {
                                     LogInterceptor.e(TAG, "Error modifying fingerprint: ${e.message}", e)
                                     safeSendLog("error", TAG, "Error modifying fingerprint: ${e.message}")
                                     false
                                 }
                             }
-                            "quick_reset" -> {
-                                val result = uniquenessService.quickReset()
-                                results["quick_reset"] = result.success
-                                results.putAll(result.results.mapValues { it.value.toString() })
+                    "quick_reset" -> {
+                        val result = uniquenessService.quickReset()
+                        results["quick_reset"] = result.success
+                        results.putAll(result.results.mapValues { it.value.toString() })
+                                result.success
+                    }
+                    "full_reset" -> {
+                        val country = action["country"] as? String
+                        val result = uniquenessService.fullReset(country)
+                        results["full_reset"] = result.success
+                        results.putAll(result.results.mapValues { it.value.toString() })
                                 result.success
                             }
-                            "full_reset" -> {
-                                val country = action["country"] as? String
-                                val result = uniquenessService.fullReset(country)
-                                results["full_reset"] = result.success
-                                results.putAll(result.results.mapValues { it.value.toString() })
-                                result.success
+                            
+                            // ==================== NEW ACTIONS: Proxy & Browser ====================
+                            
+                            "setup_proxy" -> {
+                                try {
+                                    val proxySelection = action["proxy"] as? String ?: "random"
+                                    LogInterceptor.i(TAG, "Setting up proxy: $proxySelection")
+                                    safeSendLog("info", TAG, "Setting up proxy: $proxySelection")
+                                    
+                                    // Get proxies from task config
+                                    @Suppress("UNCHECKED_CAST")
+                                    val proxies = (task.config?.get("proxies") as? List<Map<String, Any>>) ?: emptyList()
+                                    
+                                    if (proxies.isEmpty()) {
+                                        LogInterceptor.w(TAG, "No proxies configured")
+                                        false
+                                    } else {
+                                        val selectedProxy = if (proxySelection == "random") {
+                                            proxies.random()
+                                        } else {
+                                            proxies.find { it["id"] == proxySelection } ?: proxies.random()
+                                        }
+                                        
+                                        val proxyConfig = SocksProxyManager.ProxyConfig(
+                                            id = selectedProxy["id"] as? String ?: "proxy",
+                                            type = selectedProxy["type"] as? String ?: "socks5",
+                                            host = selectedProxy["host"] as? String ?: "",
+                                            port = (selectedProxy["port"] as? Number)?.toInt() ?: 0,
+                                            username = selectedProxy["username"] as? String ?: "",
+                                            password = selectedProxy["password"] as? String ?: "",
+                                            country = selectedProxy["country"] as? String ?: "US",
+                                            state = selectedProxy["state"] as? String,
+                                            rotationMinutes = (selectedProxy["rotation_minutes"] as? Number)?.toInt() ?: 10
+                                        )
+                                        
+                                        val result = socksProxyManager?.setupProxy(proxyConfig) ?: false
+                                        LogInterceptor.i(TAG, "Proxy setup result: $result")
+                                        safeSendLog("info", TAG, "Proxy ${proxyConfig.host}:${proxyConfig.port} setup: $result")
+                                        result
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error setting up proxy: ${e.message}", e)
+                                    safeSendLog("error", TAG, "Error setting up proxy: ${e.message}")
+                                    false
+                                }
                             }
+                            
+                            "detect_proxy_location" -> {
+                                try {
+                                    LogInterceptor.i(TAG, "Detecting proxy location...")
+                                    safeSendLog("info", TAG, "Detecting proxy location...")
+                                    
+                                    val location = socksProxyManager?.detectProxyLocation()
+                                    if (location != null) {
+                                        results["proxy_country"] = location.country
+                                        results["proxy_state"] = location.state ?: ""
+                                        results["proxy_city"] = location.city ?: ""
+                                        results["proxy_timezone"] = location.timezone
+                                        results["proxy_latitude"] = location.latitude.toString()
+                                        results["proxy_longitude"] = location.longitude.toString()
+                                        
+                                        LogInterceptor.i(TAG, "Proxy location: ${location.city}, ${location.state}, ${location.country}")
+                                        safeSendLog("info", TAG, "Proxy location detected: ${location.city}, ${location.state}")
+                                        true
+                                    } else {
+                                        LogInterceptor.w(TAG, "Could not detect proxy location")
+                                        false
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error detecting proxy location: ${e.message}", e)
+                                    safeSendLog("error", TAG, "Error detecting proxy location: ${e.message}")
+                                    false
+                                }
+                            }
+                            
+                            "open_url" -> {
+                                try {
+                                    val url = action["url"] as? String ?: "https://www.google.com"
+                                    val waitMs = (action["wait_ms"] as? Number)?.toLong() ?: 3000L
+                                    
+                                    LogInterceptor.i(TAG, "Opening URL: $url")
+                                    safeSendLog("info", TAG, "Opening URL: $url")
+                                    
+                                    val result = browserAutomation?.openUrl(url, waitMs)
+                                    if (result?.success == true) {
+                                        results["opened_url"] = result.url
+                                        results["page_title"] = result.title ?: ""
+                                        LogInterceptor.i(TAG, "URL opened: ${result.title}")
+                                        true
+                                    } else {
+                                        LogInterceptor.e(TAG, "Failed to open URL: ${result?.error}")
+                                        false
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error opening URL: ${e.message}", e)
+                                    safeSendLog("error", TAG, "Error opening URL: ${e.message}")
+                                    false
+                                }
+                            }
+                            
+                            "google_search" -> {
+                                try {
+                                    val query = action["query"] as? String ?: ""
+                                    val waitMs = (action["wait_ms"] as? Number)?.toLong() ?: 5000L
+                                    
+                                    LogInterceptor.i(TAG, "Google search: $query")
+                                    safeSendLog("info", TAG, "Google search: $query")
+                                    
+                                    searchResults = browserAutomation?.googleSearch(query, waitMs) ?: emptyList()
+                                    
+                                    results["search_results_count"] = searchResults.size.toString()
+                                    results["search_query"] = query
+                                    
+                                    if (searchResults.isNotEmpty()) {
+                                        LogInterceptor.i(TAG, "Found ${searchResults.size} search results")
+                                        safeSendLog("info", TAG, "Found ${searchResults.size} search results")
+                                        true
+                                    } else {
+                                        LogInterceptor.w(TAG, "No search results found")
+                                        false
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error performing Google search: ${e.message}", e)
+                                    safeSendLog("error", TAG, "Error performing Google search: ${e.message}")
+                                    false
+                                }
+                            }
+                            
+                            "click_search_result" -> {
+                                try {
+                                    val resultIndex = when (val idx = action["result_index"]) {
+                                        "random" -> -1
+                                        is Number -> idx.toInt()
+                                        else -> -1
+                                    }
+                                    val waitMs = (action["wait_ms"] as? Number)?.toLong() ?: 5000L
+                                    
+                                    LogInterceptor.i(TAG, "Clicking search result: index=$resultIndex")
+                                    safeSendLog("info", TAG, "Clicking search result: index=$resultIndex")
+                                    
+                                    val result = browserAutomation?.clickSearchResult(resultIndex, searchResults)
+                                    if (result?.success == true) {
+                                        results["clicked_url"] = result.url
+                                        results["clicked_title"] = result.title ?: ""
+                                        LogInterceptor.i(TAG, "Clicked on: ${result.url}")
+                                        safeSendLog("info", TAG, "Clicked on: ${result.url}")
+                                        
+                                        // Wait after clicking
+                                        delay(waitMs)
+                                        true
+                                    } else {
+                                        LogInterceptor.e(TAG, "Failed to click search result: ${result?.error}")
+                                        false
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error clicking search result: ${e.message}", e)
+                                    safeSendLog("error", TAG, "Error clicking search result: ${e.message}")
+                                    false
+                                }
+                            }
+                            
+                            "browse_page" -> {
+                                try {
+                                    val scrollCount = (action["scroll_count"] as? Number)?.toInt() ?: 3
+                                    val stayTimeMs = (action["stay_time_ms"] as? Number)?.toLong() ?: 10000L
+                                    val scroll = action["scroll"] as? Boolean ?: true
+                                    
+                                    LogInterceptor.i(TAG, "Browsing page: scroll=$scroll, scrollCount=$scrollCount, stayTime=$stayTimeMs")
+                                    safeSendLog("info", TAG, "Browsing page: scroll=$scroll, stayTime=$stayTimeMs")
+                                    
+                                    val result = browserAutomation?.browsePage(
+                                        scrollCount = if (scroll) scrollCount else 0,
+                                        stayTimeMs = stayTimeMs
+                                    )
+                                    
+                                    if (result?.success == true) {
+                                        results["browsed_url"] = result.url
+                                        LogInterceptor.i(TAG, "Page browsed successfully: ${result.url}")
+                                        safeSendLog("info", TAG, "Page browsed successfully")
+                                        true
+                                    } else {
+                                        LogInterceptor.e(TAG, "Failed to browse page: ${result?.error}")
+                                        false
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error browsing page: ${e.message}", e)
+                                    safeSendLog("error", TAG, "Error browsing page: ${e.message}")
+                                    false
+                                }
+                            }
+                            
+                            "take_screenshot" -> {
+                                try {
+                                    LogInterceptor.i(TAG, "Taking screenshot...")
+                                    val path = browserAutomation?.takeScreenshot()
+                                    if (path != null) {
+                                        results["screenshot_path"] = path
+                                        LogInterceptor.i(TAG, "Screenshot saved: $path")
+                                        safeSendLog("info", TAG, "Screenshot saved")
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error taking screenshot: ${e.message}", e)
+                                    false
+                                }
+                            }
+                            
+                            "clear_proxy" -> {
+                                try {
+                                    LogInterceptor.i(TAG, "Clearing proxy settings...")
+                                    val result = socksProxyManager?.clearProxy() ?: false
+                                    LogInterceptor.i(TAG, "Proxy cleared: $result")
+                                    safeSendLog("info", TAG, "Proxy cleared: $result")
+                                    result
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error clearing proxy: ${e.message}", e)
+                                    false
+                                }
+                            }
+                            
+                            // ==================== END NEW ACTIONS ====================
+                            
                             else -> {
                                 LogInterceptor.w(TAG, "Unknown action type: $actionType")
                                 results["${actionId}_error"] = "Unknown action type: $actionType"
