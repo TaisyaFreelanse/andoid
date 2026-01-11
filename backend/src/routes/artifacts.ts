@@ -15,6 +15,7 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
       const { 
         deviceId, 
         taskId, 
+        type,
         limit = '50', 
         offset = '0',
         dateFrom,
@@ -22,76 +23,54 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
       } = request.query as {
         deviceId?: string;
         taskId?: string;
+        type?: string;
         limit?: string;
         offset?: string;
         dateFrom?: string;
         dateTo?: string;
       };
 
-      const where: any = {
-        screenshotPath: { not: null },
-      };
+      const where: any = {};
 
       if (taskId) where.taskId = taskId;
+      if (deviceId) where.deviceId = deviceId;
+      if (type) where.type = type;
       if (dateFrom || dateTo) {
-        where.parsedAt = {};
-        if (dateFrom) where.parsedAt.gte = new Date(dateFrom);
-        if (dateTo) where.parsedAt.lte = new Date(dateTo);
-      }
-      if (deviceId) {
-        where.task = { deviceId };
+        where.capturedAt = {};
+        if (dateFrom) where.capturedAt.gte = new Date(dateFrom);
+        if (dateTo) where.capturedAt.lte = new Date(dateTo);
       }
 
       const [artifacts, total] = await Promise.all([
-        prisma.parsedData.findMany({
+        prisma.artifact.findMany({
           where,
-          select: {
-            id: true,
-            taskId: true,
-            screenshotPath: true,
-            parsedAt: true,
-            adDomain: true,
-            url: true,
-            task: {
-              select: {
-                id: true,
-                name: true,
-                type: true,
-                deviceId: true,
-                device: {
-                  select: { name: true, androidId: true },
-                },
-              },
-            },
-          },
-          orderBy: { parsedAt: 'desc' },
+          orderBy: { capturedAt: 'desc' },
           take: parseInt(limit, 10),
           skip: parseInt(offset, 10),
         }),
-        prisma.parsedData.count({ where }),
+        prisma.artifact.count({ where }),
       ]);
 
       // Generate presigned URLs
       const artifactsWithUrls = await Promise.all(artifacts.map(async (artifact) => {
         let url = null;
         try {
-          url = await storageService.getPresignedUrl(artifact.screenshotPath!, 3600);
+          url = await storageService.getPresignedUrl(artifact.path, 3600);
         } catch (error) {
-          logger.warn({ error, path: artifact.screenshotPath }, 'Failed to get presigned URL');
+          logger.warn({ error, path: artifact.path }, 'Failed to get presigned URL');
         }
 
         return {
           id: artifact.id,
           taskId: artifact.taskId,
-          taskName: artifact.task?.name,
-          taskType: artifact.task?.type,
-          deviceId: artifact.task?.deviceId,
-          deviceName: artifact.task?.device?.name || artifact.task?.device?.androidId,
-          path: artifact.screenshotPath,
+          deviceId: artifact.deviceId,
+          path: artifact.path,
+          type: artifact.type,
+          size: artifact.size,
+          mimeType: artifact.mimeType,
           url,
-          domain: artifact.adDomain,
-          sourceUrl: artifact.url,
-          capturedAt: artifact.parsedAt,
+          capturedAt: artifact.capturedAt,
+          createdAt: artifact.createdAt,
         };
       }));
 
@@ -112,47 +91,45 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
     '/stats',
     { preHandler: [authenticate] },
     async (request, _reply) => {
-      const { deviceId, dateFrom, dateTo } = request.query as {
+      const { deviceId, type, dateFrom, dateTo } = request.query as {
         deviceId?: string;
+        type?: string;
         dateFrom?: string;
         dateTo?: string;
       };
 
-      const where: any = {
-        screenshotPath: { not: null },
-      };
+      const where: any = {};
+      if (deviceId) where.deviceId = deviceId;
+      if (type) where.type = type;
       if (dateFrom || dateTo) {
-        where.parsedAt = {};
-        if (dateFrom) where.parsedAt.gte = new Date(dateFrom);
-        if (dateTo) where.parsedAt.lte = new Date(dateTo);
-      }
-      if (deviceId) {
-        where.task = { deviceId };
+        where.capturedAt = {};
+        if (dateFrom) where.capturedAt.gte = new Date(dateFrom);
+        if (dateTo) where.capturedAt.lte = new Date(dateTo);
       }
 
-      const [totalArtifacts, byDevice, recent24h] = await Promise.all([
-        prisma.parsedData.count({ where }),
-        prisma.parsedData.findMany({
+      const [totalArtifacts, byDevice, recent24h, totalSize] = await Promise.all([
+        prisma.artifact.count({ where }),
+        prisma.artifact.groupBy({
+          by: ['deviceId'],
           where,
-          select: {
-            task: {
-              select: { deviceId: true },
-            },
-          },
+          _count: { id: true },
         }).then(data => {
           const counts: Record<string, number> = {};
           data.forEach(d => {
-            const deviceId = d.task?.deviceId || 'unknown';
-            counts[deviceId] = (counts[deviceId] || 0) + 1;
+            counts[d.deviceId] = d._count.id;
           });
           return counts;
         }),
-        prisma.parsedData.count({
+        prisma.artifact.count({
           where: {
             ...where,
-            parsedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+            capturedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
           },
         }),
+        prisma.artifact.aggregate({
+          where,
+          _sum: { size: true },
+        }).then(r => r._sum.size || 0),
       ]);
 
       return {
@@ -160,6 +137,8 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
           total: totalArtifacts,
           recent24h,
           byDevice,
+          totalSizeBytes: totalSize,
+          totalSizeMB: Math.round((totalSize as number) / 1024 / 1024 * 100) / 100,
         },
       };
     }
