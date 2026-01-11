@@ -348,10 +348,6 @@ class ApiClient(
     ): UploadResponse? {
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataPart("deviceId", deviceId)
-            .apply {
-                taskId?.let { addFormDataPart("taskId", it) }
-            }
             .addFormDataPart(
                 "screenshot",
                 filename,
@@ -362,7 +358,9 @@ class ApiClient(
         val request = Request.Builder()
             .url("$baseUrl/api/agent/screenshot")
             .post(requestBody)
+            .addHeader("x-device-id", deviceId)
             .apply {
+                taskId?.let { addHeader("x-task-id", it) }
                 authToken?.let { addHeader("Authorization", "Bearer $it") }
             }
             .build()
