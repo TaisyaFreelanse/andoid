@@ -608,7 +608,20 @@ export async function agentRoutes(fastify: FastifyInstance) {
       
       await storageService.uploadFile(buffer, fileName, 'image/png');
 
-      
+      // Create artifact record
+      const artifact = await prisma.artifact.create({
+        data: {
+          deviceId: deviceId,
+          taskId: taskId,
+          path: fileName,
+          type: 'screenshot',
+          size: buffer.length,
+          mimeType: 'image/png',
+          capturedAt: timestamp,
+        },
+      });
+
+      // Also update parsedData if exists
       await prisma.parsedData.updateMany({
         where: {
           taskId: taskId,
@@ -619,12 +632,13 @@ export async function agentRoutes(fastify: FastifyInstance) {
         },
       });
 
-      logger.info({ deviceId, taskId, fileName }, 'Screenshot uploaded');
+      logger.info({ deviceId, taskId, fileName, artifactId: artifact.id }, 'Screenshot uploaded and artifact created');
 
       return {
         success: true,
         path: fileName,
         url: `/api/artifacts/${fileName}`,
+        artifactId: artifact.id,
       };
     } catch (error) {
       logger.error({ error, deviceId, taskId }, 'Error uploading screenshot');

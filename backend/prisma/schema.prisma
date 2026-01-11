@@ -234,3 +234,20 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model Artifact {
+  id         String   @id @default(uuid())
+  deviceId   String   @map("device_id")
+  taskId     String   @map("task_id")
+  path       String   @db.VarChar(500)
+  type       String   @db.VarChar(50) // screenshot, log, etc.
+  size       Int?     // file size in bytes
+  mimeType   String?  @map("mime_type") @db.VarChar(100)
+  capturedAt DateTime @default(now()) @map("captured_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId])
+  @@index([taskId])
+  @@index([capturedAt])
+  @@index([type])
+  @@map("artifacts")
+}
