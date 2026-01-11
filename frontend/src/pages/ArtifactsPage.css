@@ -1,4 +1,4 @@
-.artifacts-page {
+﻿.artifacts-page {
   width: 100%;
   gap: 2.5rem;
 }
@@ -11,3 +11,211 @@
   letter-spacing: 0.3em;
 }
 
+/* Stats Section */
+.stats-section {
+  padding: 0 2.5rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1.5rem;
+}
+
+.stat-card {
+  background: var(--color-surface, #1a1a1a);
+  border: 1px solid var(--color-border, #333);
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-primary, #00d4ff);
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: var(--color-muted, #888);
+  margin-top: 0.5rem;
+}
+
+/* Artifacts Grid */
+.artifacts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
+
+.artifact-card {
+  background: var(--color-surface, #1a1a1a);
+  border: 1px solid var(--color-border, #333);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.artifact-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.artifact-preview {
+  aspect-ratio: 16/9;
+  background: #0a0a0a;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.artifact-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.artifact-preview .no-preview {
+  color: var(--color-muted, #666);
+  font-size: 0.9rem;
+}
+
+.artifact-info {
+  padding: 1rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.artifact-type {
+  font-weight: 600;
+  color: var(--color-primary, #00d4ff);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.artifact-size,
+.artifact-date,
+.artifact-task {
+  color: var(--color-muted, #888);
+}
+
+.artifact-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--color-border, #333);
+}
+
+.artifact-actions .btn-view {
+  flex: 1;
+  padding: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--color-border, #444);
+  border-radius: 4px;
+  color: var(--color-text, #fff);
+  text-align: center;
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.artifact-actions .btn-view:hover {
+  background: var(--color-surface-hover, #2a2a2a);
+}
+
+.artifact-actions .btn-delete {
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--color-danger, #ff4444);
+  border-radius: 4px;
+  color: var(--color-danger, #ff4444);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.artifact-actions .btn-delete:hover {
+  background: rgba(255, 68, 68, 0.1);
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: var(--color-muted, #888);
+}
+
+.empty-state .hint {
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  opacity: 0.7;
+}
+
+/* Loading & Error */
+.loading, .error {
+  padding: 2rem;
+  text-align: center;
+}
+
+.error {
+  color: var(--color-danger, #ff4444);
+}
+
+/* Modal */
+.artifact-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 2rem;
+}
+
+.modal-content {
+  background: var(--color-surface, #1a1a1a);
+  border-radius: 12px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  position: relative;
+}
+
+.modal-content img {
+  max-width: 100%;
+  max-height: 70vh;
+  display: block;
+}
+
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--color-surface, #333);
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.modal-info {
+  padding: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.modal-info p {
+  margin: 0.5rem 0;
+  color: var(--color-muted, #aaa);
+}
+
+.modal-info strong {
+  color: var(--color-text, #fff);
+}
