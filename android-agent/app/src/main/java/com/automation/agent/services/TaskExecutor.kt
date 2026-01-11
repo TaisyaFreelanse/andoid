@@ -63,6 +63,7 @@ class TaskExecutor(
         const val STEP_SCROLL = "scroll"
         const val STEP_EXTRACT = "extract"
         const val STEP_SCREENSHOT = "screenshot"
+        const val STEP_TAKE_SCREENSHOT = "take_screenshot"
         const val STEP_UPLOAD = "upload"
         const val STEP_INPUT = "input"
         const val STEP_SUBMIT = "submit"
@@ -257,7 +258,7 @@ class TaskExecutor(
             STEP_CLICK -> executeClick(browser, step)
             STEP_SCROLL -> executeScroll(browser, step)
             STEP_EXTRACT -> executeExtract(browser, step)
-            STEP_SCREENSHOT -> executeScreenshot(browser, step)
+            STEP_SCREENSHOT, STEP_TAKE_SCREENSHOT -> executeScreenshot(browser, step)
             STEP_INPUT -> executeInput(browser, step)
             STEP_SUBMIT -> executeSubmit(browser, step)
             STEP_UPLOAD -> executeUpload(step)
@@ -725,20 +726,69 @@ class TaskExecutor(
      * Take screenshot
      */
     private suspend fun executeScreenshot(browser: BrowserController, step: TaskStep): StepResult {
-        val saveAs = step.config["save_as"] as? String ?: "screenshot"
-        val selector = step.config["selector"] as? String // Optional: screenshot specific element
+        val saveAs = step.config["save_as"] as? String 
+            ?: step.config["filename"] as? String 
+            ?: "screenshot"
+        val uploadToServer = step.config["upload_to_server"] as? Boolean ?: true
         
         return try {
-            val screenshot = Screenshot()
-            // Note: Actual implementation depends on browser type
-            // For WebView we can capture the view directly
+            val screenshotHelper = Screenshot(context)
             
-            // For now, return placeholder
+            // Capture screenshot using browser's takeScreenshot method
+            val bitmap = browser.takeScreenshot()
+            
+            if (bitmap == null) {
+                return StepResult(success = false, error = "Failed to capture screenshot")
+            }
+            
+            // Save locally
+            val localFile = withContext(Dispatchers.IO) {
+                screenshotHelper.saveWithTimestamp(bitmap, saveAs)
+            }
+            
+            val localPath = localFile?.absolutePath ?: ""
+            Log.d(TAG, "Screenshot saved locally: $localPath")
+            
+            // Upload to server if requested
+            var uploadResult: ApiClient.UploadResponse? = null
+            if (uploadToServer && localFile != null && deviceId.isNotEmpty()) {
+                try {
+                    val screenshotBytes = withContext(Dispatchers.IO) {
+                        localFile.readBytes()
+                    }
+                    val filename = "${saveAs}_${System.currentTimeMillis()}.png"
+                    
+                    Log.d(TAG, "Uploading screenshot to server: $filename")
+                    uploadResult = withContext(Dispatchers.IO) {
+                        apiClient.uploadScreenshot(
+                            deviceId = deviceId,
+                            taskId = currentTaskId,
+                            screenshotBytes = screenshotBytes,
+                            filename = filename
+                        )
+                    }
+                    
+                    if (uploadResult?.success == true) {
+                        Log.d(TAG, "Screenshot uploaded: ${uploadResult.path}")
+                    } else {
+                        Log.w(TAG, "Screenshot upload failed")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Screenshot upload error: ${e.message}")
+                }
+            }
+            
             StepResult(
                 success = true,
-                data = mapOf("saved_as" to saveAs)
+                data = mapOf(
+                    "saved_as" to saveAs,
+                    "local_path" to localPath,
+                    "uploaded" to (uploadResult?.success == true),
+                    "server_path" to (uploadResult?.path ?: "")
+                )
             )
         } catch (e: Exception) {
+            Log.e(TAG, "Screenshot failed: ${e.message}", e)
             StepResult(success = false, error = "Screenshot failed: ${e.message}")
         }
     }
