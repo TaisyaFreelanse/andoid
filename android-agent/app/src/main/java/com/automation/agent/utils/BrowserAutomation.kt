@@ -119,7 +119,18 @@ class BrowserAutomation(
                 }
             }
             
-            Log.i(TAG, "WebView initialized with UA: $currentUserAgent")
+            // Force layout for programmatic WebView (not attached to window)
+            val displayMetrics = context.resources.displayMetrics
+            val targetWidth = displayMetrics.widthPixels.coerceAtLeast(1080)
+            val targetHeight = displayMetrics.heightPixels.coerceAtLeast(1920)
+            
+            webView?.measure(
+                View.MeasureSpec.makeMeasureSpec(targetWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(targetHeight, View.MeasureSpec.EXACTLY)
+            )
+            webView?.layout(0, 0, targetWidth, targetHeight)
+            
+            Log.i(TAG, "WebView initialized with UA: $currentUserAgent, size: ${targetWidth}x${targetHeight}")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize WebView: ${e.message}", e)
@@ -415,13 +426,33 @@ class BrowserAutomation(
             }
             
             webView?.let { wv ->
-                // Use modern approach instead of deprecated drawingCache
-                val bitmap = Bitmap.createBitmap(
-                    wv.width.coerceAtLeast(1),
-                    wv.height.coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888
-                )
+                // Ensure WebView has proper dimensions (for programmatic WebView not attached to window)
+                val displayMetrics = context.resources.displayMetrics
+                val targetWidth = displayMetrics.widthPixels.coerceAtLeast(1080)
+                val targetHeight = displayMetrics.heightPixels.coerceAtLeast(1920)
+                
+                // If WebView has no size, measure and layout it
+                if (wv.width <= 0 || wv.height <= 0) {
+                    Log.i(TAG, "WebView has no size, forcing layout: ${targetWidth}x${targetHeight}")
+                    wv.measure(
+                        View.MeasureSpec.makeMeasureSpec(targetWidth, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(targetHeight, View.MeasureSpec.EXACTLY)
+                    )
+                    wv.layout(0, 0, targetWidth, targetHeight)
+                }
+                
+                val width = wv.width.coerceAtLeast(targetWidth)
+                val height = wv.height.coerceAtLeast(targetHeight)
+                
+                Log.i(TAG, "Taking screenshot with dimensions: ${width}x${height}")
+                
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 val canvas = android.graphics.Canvas(bitmap)
+                
+                // Draw white background first
+                canvas.drawColor(android.graphics.Color.WHITE)
+                
+                // Draw WebView content
                 wv.draw(canvas)
                 
                 val screenshotDir = File(context.cacheDir, "screenshots")
@@ -432,7 +463,14 @@ class BrowserAutomation(
                     bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
                 }
                 
-                Log.i(TAG, "Screenshot saved: ${screenshotFile.absolutePath}")
+                val fileSize = screenshotFile.length()
+                Log.i(TAG, "Screenshot saved: ${screenshotFile.absolutePath}, size: $fileSize bytes")
+                
+                // Validate screenshot is not empty (less than 1KB is likely empty)
+                if (fileSize < 1000) {
+                    Log.w(TAG, "Screenshot seems empty (size: $fileSize bytes)")
+                }
+                
                 screenshotFile.absolutePath
             }
         } catch (e: Exception) {
