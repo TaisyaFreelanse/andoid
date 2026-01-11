@@ -1558,8 +1558,41 @@ class ControllerService : LifecycleService() {
                                     val path = browserAutomation?.takeScreenshot()
                                     if (path != null) {
                                         results["screenshot_path"] = path
-                                        LogInterceptor.i(TAG, "Screenshot saved: $path")
-                                        safeSendLog("info", TAG, "Screenshot saved")
+                                        LogInterceptor.i(TAG, "Screenshot saved locally: $path")
+                                        safeSendLog("info", TAG, "Screenshot saved locally")
+                                        
+                                        // Upload to server
+                                        val uploadToServer = (action["upload_to_server"] as? Boolean) ?: true
+                                        if (uploadToServer) {
+                                            val screenshotFile = java.io.File(path)
+                                            if (screenshotFile.exists()) {
+                                                val screenshotBytes = screenshotFile.readBytes()
+                                                val filenamePrefix = (action["filename"] as? String) ?: "screenshot"
+                                                val filename = "${filenamePrefix}_${System.currentTimeMillis()}.png"
+                                                
+                                                LogInterceptor.i(TAG, "Uploading screenshot to server: $filename")
+                                                val uploadResult = withContext(Dispatchers.IO) {
+                                                    apiClient.uploadScreenshot(
+                                                        deviceId = deviceId ?: "",
+                                                        taskId = task.id,
+                                                        screenshotBytes = screenshotBytes,
+                                                        filename = filename
+                                                    )
+                                                }
+                                                
+                                                if (uploadResult != null && uploadResult.success) {
+                                                    results["screenshot_uploaded"] = true
+                                                    results["screenshot_server_path"] = uploadResult.path ?: ""
+                                                    LogInterceptor.i(TAG, "Screenshot uploaded: ${uploadResult.path}")
+                                                    safeSendLog("info", TAG, "Screenshot uploaded to server")
+                                                } else {
+                                                    results["screenshot_uploaded"] = false
+                                                    LogInterceptor.w(TAG, "Screenshot upload failed")
+                                                    safeSendLog("warn", TAG, "Screenshot upload failed")
+                                                }
+                                            }
+                                        }
+                                        
                                         true
                                     } else {
                                         false

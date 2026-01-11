@@ -1,0 +1,109 @@
+{
+  "id": "screenshot-test-scenario",
+  "name": "Тест скриншотов: парсинг + артефакты",
+  "description": "Сценарий для тестирования создания скриншотов и сохранения в MinIO",
+  "version": "1.0",
+  "type": "parsing",
+  "browser": "webview",
+  "timeout": 180000,
+  "config": {
+    "wait_for_ads": true,
+    "scroll_before_extract": true,
+    "take_screenshots": true,
+    "screenshot_on_each_step": false,
+    "screenshot_at_end": true,
+    "human_like": true,
+    "random_delays": true,
+    "min_delay": 1000,
+    "max_delay": 3000
+  },
+  "steps": [
+    {
+      "id": "step_1",
+      "type": "navigate",
+      "url": "https://www.pickuplineinsider.com/",
+      "wait_for_load": true,
+      "timeout": 30000,
+      "description": "Переход на сайт"
+    },
+    {
+      "id": "step_2",
+      "type": "wait",
+      "duration": 5000,
+      "description": "Ожидание загрузки страницы"
+    },
+    {
+      "id": "step_3",
+      "type": "take_screenshot",
+      "filename": "page_loaded",
+      "description": "Скриншот после загрузки страницы",
+      "upload_to_server": true
+    },
+    {
+      "id": "step_4",
+      "type": "scroll",
+      "pixels": 500,
+      "smooth": true,
+      "direction": "down",
+      "description": "Прокрутка вниз"
+    },
+    {
+      "id": "step_5",
+      "type": "wait",
+      "duration": 3000,
+      "description": "Ожидание загрузки рекламы"
+    },
+    {
+      "id": "step_6",
+      "type": "take_screenshot",
+      "filename": "after_scroll",
+      "description": "Скриншот после прокрутки",
+      "upload_to_server": true
+    },
+    {
+      "id": "step_7",
+      "type": "scroll",
+      "pixels": 500,
+      "smooth": true,
+      "direction": "down",
+      "description": "Еще прокрутка"
+    },
+    {
+      "id": "step_8",
+      "type": "wait",
+      "duration": 3000,
+      "description": "Ожидание"
+    },
+    {
+      "id": "step_9",
+      "type": "extract",
+      "append": false,
+      "save_as": "ad_links",
+      "multiple": true,
+      "selector": "iframe[src*='googlesyndication'], iframe[src*='doubleclick'], a[href*='adurl'], a[href*='googleads']",
+      "attribute": "src,href",
+      "description": "Извлечение рекламных ссылок",
+      "extract_adurl": true
+    },
+    {
+      "id": "step_10",
+      "type": "take_screenshot",
+      "filename": "final_state",
+      "description": "Финальный скриншот",
+      "upload_to_server": true,
+      "full_page": false
+    }
+  ],
+  "output": {
+    "format": "json",
+    "include_metadata": true,
+    "include_screenshots": true
+  },
+  "post_process": {
+    "export_format": "json",
+    "extract_adurl": true,
+    "save_to_backend": true,
+    "deduplicate_domains": true,
+    "upload_screenshots": true
+  }
+}
