@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "artifacts" (
     "id" TEXT NOT NULL,
     "device_id" TEXT NOT NULL,
