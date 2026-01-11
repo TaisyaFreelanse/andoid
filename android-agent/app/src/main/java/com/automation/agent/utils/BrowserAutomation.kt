@@ -409,10 +409,20 @@ class BrowserAutomation(
      */
     suspend fun takeScreenshot(): String? = withContext(Dispatchers.Main) {
         try {
+            if (webView == null) {
+                Log.w(TAG, "WebView is null, cannot take screenshot")
+                return@withContext null
+            }
+            
             webView?.let { wv ->
-                wv.isDrawingCacheEnabled = true
-                val bitmap = Bitmap.createBitmap(wv.drawingCache)
-                wv.isDrawingCacheEnabled = false
+                // Use modern approach instead of deprecated drawingCache
+                val bitmap = Bitmap.createBitmap(
+                    wv.width.coerceAtLeast(1),
+                    wv.height.coerceAtLeast(1),
+                    Bitmap.Config.ARGB_8888
+                )
+                val canvas = android.graphics.Canvas(bitmap)
+                wv.draw(canvas)
                 
                 val screenshotDir = File(context.cacheDir, "screenshots")
                 screenshotDir.mkdirs()
