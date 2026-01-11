@@ -225,15 +225,20 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
         // Delete from storage
         await storageService.deleteFile(path);
 
-        // Update parsed data entries
+        // Delete from artifacts table
+        const deleteResult = await prisma.artifact.deleteMany({
+          where: { path: path },
+        });
+
+        // Update parsed data entries (for backwards compatibility)
         await prisma.parsedData.updateMany({
           where: { screenshotPath: path },
           data: { screenshotPath: null },
         });
 
-        logger.info({ path }, 'Artifact deleted by path');
+        logger.info({ path, deletedCount: deleteResult.count }, 'Artifact deleted by path');
 
-        return { success: true, message: 'Artifact deleted' };
+        return { success: true, message: 'Artifact deleted', deletedCount: deleteResult.count };
       } catch (error) {
         logger.error({ error, path }, 'Error deleting artifact');
         return reply.status(500).send({
