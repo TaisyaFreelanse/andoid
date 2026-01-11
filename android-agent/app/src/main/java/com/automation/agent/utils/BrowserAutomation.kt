@@ -120,9 +120,9 @@ class BrowserAutomation(
             }
             
             // Force layout for programmatic WebView (not attached to window)
-            val displayMetrics = context.resources.displayMetrics
-            val targetWidth = displayMetrics.widthPixels.coerceAtLeast(1080)
-            val targetHeight = displayMetrics.heightPixels.coerceAtLeast(1920)
+            // Use standard mobile screen size 1080x2400 (Full HD+)
+            val targetWidth = 1080
+            val targetHeight = 2400
             
             webView?.measure(
                 View.MeasureSpec.makeMeasureSpec(targetWidth, View.MeasureSpec.EXACTLY),
@@ -426,10 +426,9 @@ class BrowserAutomation(
             }
             
             webView?.let { wv ->
-                // Ensure WebView has proper dimensions (for programmatic WebView not attached to window)
-                val displayMetrics = context.resources.displayMetrics
-                val targetWidth = displayMetrics.widthPixels.coerceAtLeast(1080)
-                val targetHeight = displayMetrics.heightPixels.coerceAtLeast(1920)
+                // Use standard mobile screen size 1080x2400 (Full HD+)
+                val targetWidth = 1080
+                val targetHeight = 2400
                 
                 // If WebView has no size, measure and layout it
                 if (wv.width <= 0 || wv.height <= 0) {
