@@ -604,14 +604,34 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
       // Get page URL from form data if provided
       // In Fastify multipart, fields can be accessed via data.fields
-      // The structure is: fields.url.value or fields.url (depending on version)
+      // The structure depends on version: fields.url.value or fields.url or just url in fields object
       let pageUrl: string | null = null;
+      
+      // Log all fields for debugging
+      logger.info({ 
+        hasFields: !!data.fields, 
+        fieldsType: typeof data.fields,
+        fieldsKeys: data.fields ? Object.keys(data.fields as any) : [],
+        fieldsValue: data.fields
+      }, 'Screenshot upload - form data fields');
+      
       if (data.fields && typeof data.fields === 'object') {
-        const urlField = (data.fields as any).url;
+        const fields = data.fields as any;
+        const urlField = fields.url;
+        
         if (urlField) {
-          pageUrl = typeof urlField === 'string' ? urlField : (urlField.value || null);
+          // Try different ways to access the field value
+          if (typeof urlField === 'string') {
+            pageUrl = urlField;
+          } else if (urlField.value) {
+            pageUrl = urlField.value;
+          } else if (Array.isArray(urlField) && urlField.length > 0) {
+            pageUrl = typeof urlField[0] === 'string' ? urlField[0] : urlField[0].value;
+          }
         }
       }
+      
+      logger.info({ pageUrl, deviceId, taskId }, 'Screenshot upload - extracted page URL');
 
       const buffer = await data.toBuffer();
       const timestamp = new Date();

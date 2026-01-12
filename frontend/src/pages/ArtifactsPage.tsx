@@ -112,8 +112,8 @@ export default function ArtifactsPage() {
             {artifacts.map((artifact) => (
               <div key={artifact.id} className="artifact-card">
                 <div className="artifact-preview" onClick={() => setSelectedArtifact(artifact)}>
-                  {artifact.url ? (
-                    <img src={artifact.url} alt="Screenshot" loading="lazy" />
+                  {artifact.imageUrl ? (
+                    <img src={artifact.imageUrl} alt="Screenshot" loading="lazy" />
                   ) : (
                     <div className="no-preview">Нет превью</div>
                   )}
@@ -134,7 +134,12 @@ export default function ArtifactsPage() {
                 <div className="artifact-actions">
                   {artifact.url && (
                     <a href={artifact.url} target="_blank" rel="noopener noreferrer" className="btn-view">
-                      👁️ Открыть
+                      👁️ Открыть страницу
+                    </a>
+                  )}
+                  {artifact.imageUrl && (
+                    <a href={artifact.imageUrl} target="_blank" rel="noopener noreferrer" className="btn-view">
+                      🖼️ Открыть скриншот
                     </a>
                   )}
                   <button onClick={() => handleDelete(artifact)} className="btn-delete">
@@ -151,8 +156,8 @@ export default function ArtifactsPage() {
         <div className="artifact-modal" onClick={() => setSelectedArtifact(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setSelectedArtifact(null)}>×</button>
-            {selectedArtifact.url && (
-              <img src={selectedArtifact.url} alt="Screenshot" />
+            {selectedArtifact.imageUrl && (
+              <img src={selectedArtifact.imageUrl} alt="Screenshot" />
             )}
             <div className="modal-info">
               <p><strong>ID:</strong> {selectedArtifact.id}</p>

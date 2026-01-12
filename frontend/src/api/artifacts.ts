@@ -8,7 +8,8 @@ export interface Artifact {
   type: string;
   size: number | null;
   mimeType: string | null;
-  url: string | null;
+  url: string | null; // URL страницы, на которой был сделан скриншот
+  imageUrl: string | null; // Presigned URL для доступа к самому скриншоту
   capturedAt: string;
   createdAt: string;
 }

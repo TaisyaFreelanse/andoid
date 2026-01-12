@@ -51,11 +51,11 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
         prisma.artifact.count({ where }),
       ]);
 
-      // Generate presigned URLs
+      // Generate presigned URLs for screenshots (separate from page URL)
       const artifactsWithUrls = await Promise.all(artifacts.map(async (artifact) => {
-        let url = null;
+        let imageUrl = null;
         try {
-          url = await storageService.getPresignedUrl(artifact.path, 3600);
+          imageUrl = await storageService.getPresignedUrl(artifact.path, 3600);
         } catch (error) {
           logger.warn({ error, path: artifact.path }, 'Failed to get presigned URL');
         }
@@ -68,7 +68,8 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
           type: artifact.type,
           size: artifact.size,
           mimeType: artifact.mimeType,
-          url,
+          url: artifact.url, // URL страницы, на которой был сделан скриншот
+          imageUrl, // Presigned URL для доступа к самому скриншоту
           capturedAt: artifact.capturedAt,
           createdAt: artifact.createdAt,
         };

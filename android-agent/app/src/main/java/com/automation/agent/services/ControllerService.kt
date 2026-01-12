@@ -1611,7 +1611,7 @@ class ControllerService : LifecycleService() {
                                     val screenshotResult = browserAutomation?.takeScreenshot()
                                     if (screenshotResult != null) {
                                         results["screenshot_path"] = screenshotResult.path
-                                        results["screenshot_url"] = screenshotResult.url
+                                        screenshotResult.url?.let { results["screenshot_url"] = it }
                                         LogInterceptor.i(TAG, "Screenshot saved locally: ${screenshotResult.path}, URL: ${screenshotResult.url}")
                                         safeSendLog("info", TAG, "Screenshot saved locally")
                                         
