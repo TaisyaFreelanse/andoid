@@ -122,6 +122,13 @@ export default function ArtifactsPage() {
                   <div className="artifact-type">{artifact.type}</div>
                   <div className="artifact-size">{formatSize(artifact.size)}</div>
                   <div className="artifact-date">{formatDate(artifact.capturedAt)}</div>
+                  {artifact.url && (
+                    <div className="artifact-page-url" title={artifact.url}>
+                      <a href={artifact.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                        🌐 {artifact.url.length > 50 ? artifact.url.substring(0, 50) + '...' : artifact.url}
+                      </a>
+                    </div>
+                  )}
                   <div className="artifact-task">Task: {artifact.taskId.slice(0, 8)}...</div>
                 </div>
                 <div className="artifact-actions">
@@ -152,6 +159,9 @@ export default function ArtifactsPage() {
               <p><strong>Тип:</strong> {selectedArtifact.type}</p>
               <p><strong>Размер:</strong> {formatSize(selectedArtifact.size)}</p>
               <p><strong>Дата:</strong> {formatDate(selectedArtifact.capturedAt)}</p>
+              {selectedArtifact.url && (
+                <p><strong>URL страницы:</strong> <a href={selectedArtifact.url} target="_blank" rel="noopener noreferrer">{selectedArtifact.url}</a></p>
+              )}
               <p><strong>Task ID:</strong> {selectedArtifact.taskId}</p>
               <p><strong>Device ID:</strong> {selectedArtifact.deviceId}</p>
               <p><strong>Путь:</strong> {selectedArtifact.path}</p>

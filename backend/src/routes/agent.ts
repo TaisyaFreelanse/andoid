@@ -602,6 +602,17 @@ export async function agentRoutes(fastify: FastifyInstance) {
         });
       }
 
+      // Get page URL from form data if provided
+      // In Fastify multipart, fields can be accessed via data.fields
+      // The structure is: fields.url.value or fields.url (depending on version)
+      let pageUrl: string | null = null;
+      if (data.fields && typeof data.fields === 'object') {
+        const urlField = (data.fields as any).url;
+        if (urlField) {
+          pageUrl = typeof urlField === 'string' ? urlField : (urlField.value || null);
+        }
+      }
+
       const buffer = await data.toBuffer();
       const timestamp = new Date();
       const fileName = storageService.generateScreenshotPath(deviceId, taskId, timestamp);
@@ -617,6 +628,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
           type: 'screenshot',
           size: buffer.length,
           mimeType: 'image/png',
+          url: pageUrl,
           capturedAt: timestamp,
         },
       });

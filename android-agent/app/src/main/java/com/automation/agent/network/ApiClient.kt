@@ -344,16 +344,23 @@ class ApiClient(
         deviceId: String,
         taskId: String?,
         screenshotBytes: ByteArray,
-        filename: String = "screenshot.png"
+        filename: String = "screenshot.png",
+        pageUrl: String? = null
     ): UploadResponse? {
-        val requestBody = MultipartBody.Builder()
+        val requestBodyBuilder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart(
                 "screenshot",
                 filename,
                 screenshotBytes.toRequestBody("image/png".toMediaType())
             )
-            .build()
+        
+        // Add page URL if provided
+        pageUrl?.let {
+            requestBodyBuilder.addFormDataPart("url", it)
+        }
+        
+        val requestBody = requestBodyBuilder.build()
 
         val request = Request.Builder()
             .url("$baseUrl/api/agent/screenshot")

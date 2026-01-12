@@ -1,0 +1,310 @@
+{
+  "id": "final-full-cycle-scenario",
+  "name": "Полный цикл: Прокси + Google + Browsing + Screenshots + Уникализация",
+  "type": "uniqueness",
+  "version": "3.0",
+  "description": "1) Прокси/гео/таймзона/язык 2) Google поиск 3) Переходы по сайту 4) Скриншоты каждой страницы 5) Смена параметров 6) Повтор",
+  
+  "config": {
+    "browser": "webview",
+    "proxy_selection": "random",
+    "auto_detect_country": true,
+    "use_proxy_geolocation": true,
+    "verify_changes": true,
+    "backup_before": false,
+    "reboot_after": false
+  },
+  
+  "proxies": [
+    {
+      "id": "proxy1",
+      "type": "socks5",
+      "host": "x398.fxdx.in",
+      "port": 18577,
+      "username": "bmusproxy023054",
+      "password": "n6zpj7v773wa",
+      "country": "US",
+      "state": "California",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy2",
+      "type": "socks5",
+      "host": "x356.fxdx.in",
+      "port": 14517,
+      "username": "bmusproxy294603",
+      "password": "pkrygbfbby73",
+      "country": "US",
+      "state": "Texas",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy3",
+      "type": "socks5",
+      "host": "x468.fxdx.in",
+      "port": 13873,
+      "username": "bmusproxy054045",
+      "password": "s35cbq2gnmvv",
+      "country": "US",
+      "state": "New York",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy4",
+      "type": "socks5",
+      "host": "x343.fxdx.in",
+      "port": 14653,
+      "username": "bmusproxy233723",
+      "password": "dmsbx95cn5sr",
+      "country": "US",
+      "state": "Florida",
+      "rotation_minutes": 10
+    },
+    {
+      "id": "proxy5",
+      "type": "socks5",
+      "host": "x335.fxdx.in",
+      "port": 14613,
+      "username": "bmusproxy285133",
+      "password": "Rc4uFGanCj0e",
+      "country": "US",
+      "state": "Illinois",
+      "rotation_minutes": 10
+    }
+  ],
+  
+  "actions": [
+    {
+      "id": "step_01_proxy",
+      "type": "setup_proxy",
+      "proxy": "random",
+      "description": "Шаг 1: Установка случайного SOCKS5 прокси"
+    },
+    {
+      "id": "step_02_detect_location",
+      "type": "detect_proxy_location",
+      "description": "Шаг 2: Определение геолокации прокси"
+    },
+    {
+      "id": "step_03_timezone",
+      "type": "change_timezone",
+      "timezone": "auto",
+      "description": "Шаг 3: Установка таймзоны на основе прокси"
+    },
+    {
+      "id": "step_04_location",
+      "type": "change_location",
+      "latitude": "auto",
+      "longitude": "auto",
+      "description": "Шаг 4: Подмена геолокации"
+    },
+    {
+      "id": "step_05_locale",
+      "type": "change_locale",
+      "locale": "en_US",
+      "description": "Шаг 5: Установка английского языка"
+    },
+    {
+      "id": "step_06_clear",
+      "type": "clear_webview_data",
+      "description": "Шаг 6: Очистка данных браузера"
+    },
+    {
+      "id": "step_07_google",
+      "type": "open_url",
+      "url": "https://www.google.com",
+      "wait_ms": 3000,
+      "description": "Шаг 7: Открытие Google"
+    },
+    {
+      "id": "step_08_search",
+      "type": "google_search",
+      "query": "site:pickuplineinsider.com",
+      "wait_ms": 5000,
+      "description": "Шаг 8: Поиск в Google"
+    },
+    {
+      "id": "step_09_screenshot_search",
+      "type": "take_screenshot",
+      "filename": "google_search_results",
+      "upload_to_server": true,
+      "wait_before_ms": 3000,
+      "description": "Шаг 9: Скриншот результатов поиска"
+    },
+    {
+      "id": "step_10_click_result",
+      "type": "click_search_result",
+      "result_index": "random",
+      "wait_ms": 5000,
+      "description": "Шаг 10: Клик по случайной ссылке"
+    },
+    {
+      "id": "step_11_screenshot_page1",
+      "type": "take_screenshot",
+      "filename": "page_1",
+      "upload_to_server": true,
+      "wait_before_ms": 3000,
+      "description": "Шаг 11: Скриншот страницы 1"
+    },
+    {
+      "id": "step_12_browse1",
+      "type": "browse_page",
+      "scroll": true,
+      "scroll_count": 2,
+      "stay_time_ms": 3000,
+      "description": "Шаг 12: Просмотр страницы 1"
+    },
+    {
+      "id": "step_13_click_internal1",
+      "type": "click_internal_link",
+      "link_index": "random",
+      "wait_ms": 4000,
+      "description": "Шаг 13: Переход по внутренней ссылке 1"
+    },
+    {
+      "id": "step_14_screenshot_page2",
+      "type": "take_screenshot",
+      "filename": "page_2",
+      "upload_to_server": true,
+      "wait_before_ms": 3000,
+      "description": "Шаг 14: Скриншот страницы 2"
+    },
+    {
+      "id": "step_15_browse2",
+      "type": "browse_page",
+      "scroll": true,
+      "scroll_count": 2,
+      "stay_time_ms": 3000,
+      "description": "Шаг 15: Просмотр страницы 2"
+    },
+    {
+      "id": "step_16_click_internal2",
+      "type": "click_internal_link",
+      "link_index": "random",
+      "wait_ms": 4000,
+      "description": "Шаг 16: Переход по внутренней ссылке 2"
+    },
+    {
+      "id": "step_17_screenshot_page3",
+      "type": "take_screenshot",
+      "filename": "page_3",
+      "upload_to_server": true,
+      "wait_before_ms": 3000,
+      "description": "Шаг 17: Скриншот страницы 3"
+    },
+    {
+      "id": "step_18_browse3",
+      "type": "browse_page",
+      "scroll": true,
+      "scroll_count": 2,
+      "stay_time_ms": 3000,
+      "description": "Шаг 18: Просмотр страницы 3"
+    },
+    {
+      "id": "step_19_click_internal3",
+      "type": "click_internal_link",
+      "link_index": "random",
+      "wait_ms": 4000,
+      "description": "Шаг 19: Переход по внутренней ссылке 3"
+    },
+    {
+      "id": "step_20_screenshot_page4",
+      "type": "take_screenshot",
+      "filename": "page_4",
+      "upload_to_server": true,
+      "wait_before_ms": 3000,
+      "description": "Шаг 20: Скриншот страницы 4"
+    },
+    {
+      "id": "step_21_browse4",
+      "type": "browse_page",
+      "scroll": true,
+      "scroll_count": 2,
+      "stay_time_ms": 3000,
+      "description": "Шаг 21: Просмотр страницы 4"
+    },
+    {
+      "id": "step_22_click_internal4",
+      "type": "click_internal_link",
+      "link_index": "random",
+      "wait_ms": 4000,
+      "description": "Шаг 22: Переход по внутренней ссылке 4"
+    },
+    {
+      "id": "step_23_screenshot_page5",
+      "type": "take_screenshot",
+      "filename": "page_5",
+      "upload_to_server": true,
+      "wait_before_ms": 3000,
+      "description": "Шаг 23: Скриншот страницы 5"
+    },
+    {
+      "id": "step_24_browse5",
+      "type": "browse_page",
+      "scroll": true,
+      "scroll_count": 2,
+      "stay_time_ms": 3000,
+      "description": "Шаг 24: Просмотр страницы 5"
+    },
+    {
+      "id": "step_25_click_internal5",
+      "type": "click_internal_link",
+      "link_index": "random",
+      "wait_ms": 4000,
+      "description": "Шаг 25: Переход по внутренней ссылке 5"
+    },
+    {
+      "id": "step_26_screenshot_page6",
+      "type": "take_screenshot",
+      "filename": "page_6",
+      "upload_to_server": true,
+      "wait_before_ms": 3000,
+      "description": "Шаг 26: Скриншот страницы 6"
+    },
+    {
+      "id": "step_27_android_id",
+      "type": "regenerate_android_id",
+      "description": "Шаг 27: Регенерация Android ID"
+    },
+    {
+      "id": "step_28_aaid",
+      "type": "regenerate_aaid",
+      "description": "Шаг 28: Регенерация AAID"
+    },
+    {
+      "id": "step_29_user_agent",
+      "type": "change_user_agent",
+      "ua": "random",
+      "description": "Шаг 29: Смена User-Agent"
+    },
+    {
+      "id": "step_30_fingerprint",
+      "type": "modify_fingerprint",
+      "description": "Шаг 30: Изменение fingerprint"
+    }
+  ],
+  
+  "repeat": true,
+  "repeat_count": -1,
+  "repeat_delay_ms": 30000,
+  
+  "timeout": 600000,
+  "requires_root": true,
+  
+  "error_handling": {
+    "continue_on_error": true,
+    "max_retries": 2,
+    "retry_delay_ms": 3000,
+    "notify_on_failure": true
+  },
+  
+  "post_process": {
+    "send_to_backend": true,
+    "screenshot_after": false,
+    "log_new_fingerprint": true,
+    "verify_android_id_changed": true,
+    "verify_user_agent_changed": true,
+    "verify_timezone_matches_proxy": true,
+    "verify_location_matches_proxy": true
+  }
+}

@@ -1257,16 +1257,30 @@ class ControllerService : LifecycleService() {
                     }
                     "change_timezone" -> {
                         val tz = action["timezone"] as? String
-                                val countryCode = action["country_code"] as? String
-                                if (tz == "random" || tz == "auto") {
-                                    val country = countryCode ?: "US"
-                                    uniquenessService.changeTimezoneByCountry(country)
-                        } else if (tz != null) {
-                                    uniquenessService.changeTimezone(tz)
-                                } else {
-                                    false
-                                }
+                        val countryCode = action["country_code"] as? String
+                        
+                        if (tz == "auto") {
+                            // Use timezone from proxy detection results
+                            val proxyTimezone = results["proxy_timezone"] as? String
+                            if (proxyTimezone != null && proxyTimezone.isNotEmpty()) {
+                                LogInterceptor.i(TAG, "Setting timezone from proxy: $proxyTimezone")
+                                safeSendLog("info", TAG, "Setting timezone: $proxyTimezone")
+                                uniquenessService.changeTimezone(proxyTimezone)
+                            } else {
+                                // Fallback to country-based timezone
+                                val country = countryCode ?: (results["proxy_country"] as? String) ?: "US"
+                                LogInterceptor.i(TAG, "Setting timezone by country: $country")
+                                uniquenessService.changeTimezoneByCountry(country)
                             }
+                        } else if (tz == "random") {
+                            val country = countryCode ?: "US"
+                            uniquenessService.changeTimezoneByCountry(country)
+                        } else if (tz != null) {
+                            uniquenessService.changeTimezone(tz)
+                        } else {
+                            false
+                        }
+                    }
                             "change_location" -> {
                                 val lat = action["latitude"]
                                 val lng = action["longitude"]
@@ -1522,6 +1536,40 @@ class ControllerService : LifecycleService() {
                                 }
                             }
                             
+                            "click_internal_link" -> {
+                                try {
+                                    val linkIndex = when (val idx = action["link_index"]) {
+                                        "random" -> -1
+                                        is Number -> idx.toInt()
+                                        else -> -1
+                                    }
+                                    val waitMs = (action["wait_ms"] as? Number)?.toLong() ?: 4000L
+                                    
+                                    LogInterceptor.i(TAG, "Clicking internal link: index=$linkIndex")
+                                    safeSendLog("info", TAG, "Clicking internal link")
+                                    
+                                    val result = browserAutomation?.clickInternalLink(linkIndex)
+                                    if (result?.success == true) {
+                                        results["internal_link_clicked"] = result.url
+                                        LogInterceptor.i(TAG, "Clicked internal link: ${result.url}")
+                                        safeSendLog("info", TAG, "Clicked internal link: ${result.url}")
+                                        
+                                        // Wait for page load
+                                        delay(waitMs)
+                                        true
+                                    } else {
+                                        LogInterceptor.w(TAG, "No internal links found or click failed: ${result?.error}")
+                                        safeSendLog("warn", TAG, "No internal links found")
+                                        // Don't fail - just skip
+                                        true
+                                    }
+                                } catch (e: Exception) {
+                                    LogInterceptor.e(TAG, "Error clicking internal link: ${e.message}", e)
+                                    safeSendLog("error", TAG, "Error clicking internal link: ${e.message}")
+                                    true // Don't fail the whole task
+                                }
+                            }
+                            
                             "browse_page" -> {
                                 try {
                                     val scrollCount = (action["scroll_count"] as? Number)?.toInt() ?: 3
@@ -1554,29 +1602,36 @@ class ControllerService : LifecycleService() {
                             
                             "take_screenshot" -> {
                                 try {
+                                    // Wait for page to fully render
+                                    val waitBeforeMs = (action["wait_before_ms"] as? Number)?.toLong() ?: 2000L
+                                    LogInterceptor.i(TAG, "Waiting ${waitBeforeMs}ms before screenshot...")
+                                    delay(waitBeforeMs)
+                                    
                                     LogInterceptor.i(TAG, "Taking screenshot...")
-                                    val path = browserAutomation?.takeScreenshot()
-                                    if (path != null) {
-                                        results["screenshot_path"] = path
-                                        LogInterceptor.i(TAG, "Screenshot saved locally: $path")
+                                    val screenshotResult = browserAutomation?.takeScreenshot()
+                                    if (screenshotResult != null) {
+                                        results["screenshot_path"] = screenshotResult.path
+                                        results["screenshot_url"] = screenshotResult.url
+                                        LogInterceptor.i(TAG, "Screenshot saved locally: ${screenshotResult.path}, URL: ${screenshotResult.url}")
                                         safeSendLog("info", TAG, "Screenshot saved locally")
                                         
                                         // Upload to server
                                         val uploadToServer = (action["upload_to_server"] as? Boolean) ?: true
                                         if (uploadToServer) {
-                                            val screenshotFile = java.io.File(path)
+                                            val screenshotFile = java.io.File(screenshotResult.path)
                                             if (screenshotFile.exists()) {
                                                 val screenshotBytes = screenshotFile.readBytes()
                                                 val filenamePrefix = (action["filename"] as? String) ?: "screenshot"
                                                 val filename = "${filenamePrefix}_${System.currentTimeMillis()}.png"
                                                 
-                                                LogInterceptor.i(TAG, "Uploading screenshot to server: $filename")
+                                                LogInterceptor.i(TAG, "Uploading screenshot to server: $filename, URL: ${screenshotResult.url}")
                                                 val uploadResult = withContext(Dispatchers.IO) {
                                                     apiClient.uploadScreenshot(
                                                         deviceId = deviceId ?: "",
                                                         taskId = task.id,
                                                         screenshotBytes = screenshotBytes,
-                                                        filename = filename
+                                                        filename = filename,
+                                                        pageUrl = screenshotResult.url
                                                     )
                                                 }
                                                 

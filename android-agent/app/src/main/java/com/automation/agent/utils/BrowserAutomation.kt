@@ -12,6 +12,8 @@ import android.webkit.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import java.io.File
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import java.io.FileOutputStream
 
 /**
@@ -38,6 +40,11 @@ class BrowserAutomation(
         val title: String?,
         val error: String? = null,
         val screenshotPath: String? = null
+    )
+    
+    data class ScreenshotResult(
+        val path: String,
+        val url: String?
     )
     
     private var webView: WebView? = null
@@ -366,6 +373,127 @@ class BrowserAutomation(
     }
     
     /**
+     * Click on internal link (same domain)
+     */
+    suspend fun clickInternalLink(index: Int = -1): BrowseResult = withContext(Dispatchers.Main) {
+        try {
+            val wv = webView ?: return@withContext BrowseResult(
+                success = false,
+                url = "",
+                title = null,
+                error = "WebView not initialized"
+            )
+            
+            val currentUrl = wv.url ?: ""
+            val currentHost = try {
+                java.net.URL(currentUrl).host
+            } catch (e: Exception) {
+                ""
+            }
+            
+            if (currentHost.isEmpty()) {
+                return@withContext BrowseResult(
+                    success = false,
+                    url = currentUrl,
+                    title = null,
+                    error = "Cannot determine current host"
+                )
+            }
+            
+            Log.i(TAG, "Looking for internal links on $currentHost")
+            
+            // Find all internal links
+            val findLinksJs = """
+                (function() {
+                    var links = document.querySelectorAll('a[href]');
+                    var internalLinks = [];
+                    var currentHost = '$currentHost';
+                    
+                    for (var i = 0; i < links.length; i++) {
+                        var link = links[i];
+                        var href = link.href;
+                        try {
+                            var url = new URL(href);
+                            // Check if same domain and not anchor link
+                            if (url.host === currentHost && 
+                                url.pathname !== window.location.pathname &&
+                                !href.includes('#') &&
+                                link.offsetParent !== null) {
+                                internalLinks.push({
+                                    url: href,
+                                    text: link.innerText.trim().substring(0, 50)
+                                });
+                            }
+                        } catch(e) {}
+                    }
+                    
+                    // Remove duplicates
+                    var unique = [];
+                    var seen = {};
+                    for (var j = 0; j < internalLinks.length; j++) {
+                        if (!seen[internalLinks[j].url]) {
+                            seen[internalLinks[j].url] = true;
+                            unique.push(internalLinks[j]);
+                        }
+                    }
+                    
+                    return JSON.stringify(unique.slice(0, 20));
+                })();
+            """.trimIndent()
+            
+            val linksJson = suspendCoroutine<String> { cont ->
+                wv.evaluateJavascript(findLinksJs) { result ->
+                    cont.resume(result?.trim('"')?.replace("\\\"", "\"")?.replace("\\\\", "\\") ?: "[]")
+                }
+            }
+            
+            Log.i(TAG, "Found internal links: $linksJson")
+            
+            // Parse links
+            val links = try {
+                val parsed = org.json.JSONArray(linksJson)
+                (0 until parsed.length()).map { i ->
+                    val obj = parsed.getJSONObject(i)
+                    Pair(obj.getString("url"), obj.optString("text", ""))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error parsing links: ${e.message}")
+                emptyList()
+            }
+            
+            if (links.isEmpty()) {
+                return@withContext BrowseResult(
+                    success = false,
+                    url = currentUrl,
+                    title = null,
+                    error = "No internal links found"
+                )
+            }
+            
+            // Select link
+            val targetIndex = if (index < 0 || index >= links.size) {
+                (links.indices).random()
+            } else {
+                index
+            }
+            
+            val (targetUrl, linkText) = links[targetIndex]
+            Log.i(TAG, "Clicking internal link #$targetIndex: $linkText -> $targetUrl")
+            
+            // Navigate to the link
+            openUrl(targetUrl, 5000)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clicking internal link: ${e.message}", e)
+            BrowseResult(
+                success = false,
+                url = "",
+                title = null,
+                error = e.message
+            )
+        }
+    }
+    
+    /**
      * Browse page with scroll behavior
      */
     suspend fun browsePage(scrollCount: Int = 3, stayTimeMs: Long = 10000): BrowseResult = withContext(Dispatchers.Main) {
@@ -418,7 +546,7 @@ class BrowserAutomation(
     /**
      * Take screenshot of current page
      */
-    suspend fun takeScreenshot(): String? = withContext(Dispatchers.Main) {
+    suspend fun takeScreenshot(): ScreenshotResult? = withContext(Dispatchers.Main) {
         try {
             if (webView == null) {
                 Log.w(TAG, "WebView is null, cannot take screenshot")
@@ -426,6 +554,10 @@ class BrowserAutomation(
             }
             
             webView?.let { wv ->
+                // Get current URL before taking screenshot
+                val currentUrl = wv.url
+                Log.i(TAG, "Current page URL: $currentUrl")
+                
                 // Use standard mobile screen size 1080x2400 (Full HD+)
                 val targetWidth = 1080
                 val targetHeight = 2400
@@ -463,14 +595,17 @@ class BrowserAutomation(
                 }
                 
                 val fileSize = screenshotFile.length()
-                Log.i(TAG, "Screenshot saved: ${screenshotFile.absolutePath}, size: $fileSize bytes")
+                Log.i(TAG, "Screenshot saved: ${screenshotFile.absolutePath}, size: $fileSize bytes, URL: $currentUrl")
                 
                 // Validate screenshot is not empty (less than 1KB is likely empty)
                 if (fileSize < 1000) {
                     Log.w(TAG, "Screenshot seems empty (size: $fileSize bytes)")
                 }
                 
-                screenshotFile.absolutePath
+                ScreenshotResult(
+                    path = screenshotFile.absolutePath,
+                    url = currentUrl
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error taking screenshot: ${e.message}", e)

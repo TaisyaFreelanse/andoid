@@ -242,6 +242,7 @@ model Artifact {
   type       String   @db.VarChar(50) // screenshot, log, etc.
   size       Int?     // file size in bytes
   mimeType   String?  @map("mime_type") @db.VarChar(100)
+  url        String?  @db.Text // URL of the page where screenshot was taken
   capturedAt DateTime @default(now()) @map("captured_at")
   createdAt  DateTime @default(now()) @map("created_at")
 
