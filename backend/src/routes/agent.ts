@@ -602,36 +602,45 @@ export async function agentRoutes(fastify: FastifyInstance) {
         });
       }
 
-      // Get page URL from form data if provided
-      // In Fastify multipart, fields can be accessed via data.fields
-      // The structure depends on version: fields.url.value or fields.url or just url in fields object
+      // Get page URL from header first (more reliable), then try form data
       let pageUrl: string | null = null;
       
-      // Log all fields for debugging
-      logger.info({ 
-        hasFields: !!data.fields, 
-        fieldsType: typeof data.fields,
-        fieldsKeys: data.fields ? Object.keys(data.fields as any) : [],
-        fieldsValue: data.fields
-      }, 'Screenshot upload - form data fields');
-      
-      if (data.fields && typeof data.fields === 'object') {
-        const fields = data.fields as any;
-        const urlField = fields.url;
+      // Try header first (x-page-url)
+      const headerUrl = (request.headers['x-page-url'] || request.headers['x-page-url']) as string;
+      if (headerUrl) {
+        pageUrl = headerUrl;
+        logger.info({ pageUrl, source: 'header' }, 'Screenshot upload - page URL from header');
+      } else {
+        // Fallback: try form data
+        logger.info({ 
+          hasFields: !!data.fields, 
+          fieldsType: typeof data.fields,
+          fieldsKeys: data.fields ? Object.keys(data.fields as any) : [],
+        }, 'Screenshot upload - trying form data fields');
         
-        if (urlField) {
-          // Try different ways to access the field value
-          if (typeof urlField === 'string') {
-            pageUrl = urlField;
-          } else if (urlField.value) {
-            pageUrl = urlField.value;
-          } else if (Array.isArray(urlField) && urlField.length > 0) {
-            pageUrl = typeof urlField[0] === 'string' ? urlField[0] : urlField[0].value;
+        if (data.fields && typeof data.fields === 'object') {
+          const fields = data.fields as any;
+          const urlField = fields.url;
+          
+          if (urlField) {
+            // Try different ways to access the field value
+            if (typeof urlField === 'string') {
+              pageUrl = urlField;
+            } else if (urlField.value) {
+              pageUrl = urlField.value;
+            } else if (Array.isArray(urlField) && urlField.length > 0) {
+              pageUrl = typeof urlField[0] === 'string' ? urlField[0] : urlField[0].value;
+            }
+            logger.info({ pageUrl, source: 'form-data' }, 'Screenshot upload - page URL from form data');
           }
         }
       }
       
-      logger.info({ pageUrl, deviceId, taskId }, 'Screenshot upload - extracted page URL');
+      if (!pageUrl) {
+        logger.warn({ deviceId, taskId }, 'Screenshot upload - no page URL provided');
+      } else {
+        logger.info({ pageUrl, deviceId, taskId }, 'Screenshot upload - page URL extracted');
+      }
 
       const buffer = await data.toBuffer();
       const timestamp = new Date();

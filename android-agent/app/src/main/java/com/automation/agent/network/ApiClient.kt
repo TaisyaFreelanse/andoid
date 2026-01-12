@@ -369,6 +369,8 @@ class ApiClient(
             .apply {
                 taskId?.let { addHeader("x-task-id", it) }
                 authToken?.let { addHeader("Authorization", "Bearer $it") }
+                // Add page URL in header as fallback (if form data doesn't work)
+                pageUrl?.let { addHeader("x-page-url", it) }
             }
             .build()
 
