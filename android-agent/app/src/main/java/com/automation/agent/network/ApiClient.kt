@@ -338,14 +338,15 @@ class ApiClient(
     }
 
     /**
-     * Upload screenshot
+     * Upload screenshot with metadata
      */
     suspend fun uploadScreenshot(
         deviceId: String,
         taskId: String?,
         screenshotBytes: ByteArray,
         filename: String = "screenshot.png",
-        pageUrl: String? = null
+        pageUrl: String? = null,
+        metadata: Map<String, Any?>? = null
     ): UploadResponse? {
         val requestBodyBuilder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -360,6 +361,12 @@ class ApiClient(
             requestBodyBuilder.addFormDataPart("url", it)
         }
         
+        // Add metadata as JSON string
+        metadata?.let {
+            val metadataJson = gson.toJson(it)
+            requestBodyBuilder.addFormDataPart("metadata", metadataJson)
+        }
+        
         val requestBody = requestBodyBuilder.build()
 
         val request = Request.Builder()
@@ -371,6 +378,11 @@ class ApiClient(
                 authToken?.let { addHeader("Authorization", "Bearer $it") }
                 // Add page URL in header as fallback (if form data doesn't work)
                 pageUrl?.let { addHeader("x-page-url", it) }
+                // Add metadata in header as JSON (fallback)
+                metadata?.let {
+                    val metadataJson = gson.toJson(it)
+                    addHeader("x-metadata", metadataJson)
+                }
             }
             .build()
 

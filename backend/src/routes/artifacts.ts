@@ -70,6 +70,7 @@ export async function artifactsRoutes(fastify: FastifyInstance) {
           mimeType: artifact.mimeType,
           url: artifact.url, // URL страницы, на которой был сделан скриншот
           imageUrl, // Presigned URL для доступа к самому скриншоту
+          metadata: artifact.metadata, // Метаданные: прокси, IP, идентификаторы устройства
           capturedAt: artifact.capturedAt,
           createdAt: artifact.createdAt,
         };

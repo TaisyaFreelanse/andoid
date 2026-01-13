@@ -1219,6 +1219,32 @@ class ControllerService : LifecycleService() {
             safeSendLog("info", TAG, "Found ${actions.size} actions to execute")
             val results = mutableMapOf<String, Any>()
             
+            // Add device identifiers at the start
+            try {
+                results["device_android_id"] = deviceInfo.getAndroidId()
+                results["device_user_agent"] = deviceInfo.getUserAgent()
+                results["device_model"] = deviceInfo.getModel()
+                results["device_manufacturer"] = deviceInfo.getManufacturer()
+                results["device_timezone"] = deviceInfo.getTimezone()
+                results["device_locale"] = deviceInfo.getLocale()
+                
+                // Get AAID asynchronously
+                lifecycleScope.launch {
+                    try {
+                        val aaid = deviceInfo.getAaid()
+                        if (aaid.isNotEmpty()) {
+                            results["device_aaid"] = aaid
+                        }
+                    } catch (e: Exception) {
+                        LogInterceptor.w(TAG, "Failed to get AAID: ${e.message}")
+                    }
+                }
+                
+                LogInterceptor.i(TAG, "Device info added: Android ID=${deviceInfo.getAndroidId()}, UA=${deviceInfo.getUserAgent()}")
+            } catch (e: Exception) {
+                LogInterceptor.w(TAG, "Failed to add device info: ${e.message}")
+            }
+            
             for ((index, action) in actions.withIndex()) {
                 try {
                 val actionType = action["type"] as? String ?: continue
@@ -1413,6 +1439,30 @@ class ControllerService : LifecycleService() {
                                         val result = socksProxyManager?.setupProxy(proxyConfig) ?: false
                                         LogInterceptor.i(TAG, "Proxy setup result: $result")
                                         safeSendLog("info", TAG, "Proxy ${proxyConfig.host}:${proxyConfig.port} setup: $result")
+                                        
+                                        // Save proxy information to results
+                                        if (result) {
+                                            results["proxy_id"] = proxyConfig.id
+                                            results["proxy_host"] = proxyConfig.host
+                                            results["proxy_port"] = proxyConfig.port.toString()
+                                            results["proxy_type"] = proxyConfig.type
+                                            results["proxy_country"] = proxyConfig.country
+                                            results["proxy_state"] = proxyConfig.state ?: ""
+                                            
+                                        // Get real IP through proxy (async, will be added to results later)
+                                        try {
+                                            val realIp = socksProxyManager?.getCurrentProxy()?.let { proxy ->
+                                                socksProxyManager?.getCurrentIp(proxy)
+                                            }
+                                            realIp?.let {
+                                                results["proxy_ip"] = it
+                                                LogInterceptor.i(TAG, "Real IP through proxy: $it")
+                                            }
+                                        } catch (e: Exception) {
+                                            LogInterceptor.w(TAG, "Failed to get real IP: ${e.message}")
+                                        }
+                                        }
+                                        
                                         result
                                     }
                                 } catch (e: Exception) {
@@ -1436,8 +1486,21 @@ class ControllerService : LifecycleService() {
                                         results["proxy_latitude"] = location.latitude.toString()
                                         results["proxy_longitude"] = location.longitude.toString()
                                         
-                                        LogInterceptor.i(TAG, "Proxy location: ${location.city}, ${location.state}, ${location.country}")
-                                        safeSendLog("info", TAG, "Proxy location detected: ${location.city}, ${location.state}")
+                                        // Add proxy IP if available
+                                        location.ip?.let {
+                                            results["proxy_ip"] = it
+                                        }
+                                        
+                                        // Add current proxy info if available
+                                        socksProxyManager?.getCurrentProxy()?.let { proxy ->
+                                            results["proxy_id"] = proxy.id
+                                            results["proxy_host"] = proxy.host
+                                            results["proxy_port"] = proxy.port.toString()
+                                            results["proxy_type"] = proxy.type
+                                        }
+                                        
+                                        LogInterceptor.i(TAG, "Proxy location: ${location.city}, ${location.state}, ${location.country}, IP: ${location.ip}")
+                                        safeSendLog("info", TAG, "Proxy location detected: ${location.city}, ${location.state}, IP: ${location.ip}")
                                         true
                                     } else {
                                         LogInterceptor.w(TAG, "Could not detect proxy location")
@@ -1624,14 +1687,56 @@ class ControllerService : LifecycleService() {
                                                 val filenamePrefix = (action["filename"] as? String) ?: "screenshot"
                                                 val filename = "${filenamePrefix}_${System.currentTimeMillis()}.png"
                                                 
-                                                LogInterceptor.i(TAG, "Uploading screenshot to server: $filename, URL: ${screenshotResult.url}")
+                                                // Collect metadata for screenshot
+                                                val metadata = mutableMapOf<String, Any?>()
+                                                
+                                                // Device identifiers
+                                                metadata["device_android_id"] = deviceInfo.getAndroidId()
+                                                metadata["device_aaid"] = deviceInfo.getAaid()
+                                                metadata["device_user_agent"] = deviceInfo.getUserAgent()
+                                                metadata["device_model"] = deviceInfo.getModel()
+                                                metadata["device_manufacturer"] = deviceInfo.getManufacturer()
+                                                metadata["device_timezone"] = deviceInfo.getTimezone()
+                                                metadata["device_locale"] = deviceInfo.getLocale()
+                                                
+                                                // Proxy information
+                                                socksProxyManager?.getCurrentProxy()?.let { proxy ->
+                                                    metadata["proxy_id"] = proxy.id
+                                                    metadata["proxy_host"] = proxy.host
+                                                    metadata["proxy_port"] = proxy.port
+                                                    metadata["proxy_type"] = proxy.type
+                                                    metadata["proxy_country"] = proxy.country
+                                                    metadata["proxy_state"] = proxy.state ?: ""
+                                                    
+                                                    // Get proxy IP
+                                                    try {
+                                                        val proxyIp = socksProxyManager?.getCurrentIp(proxy)
+                                                        metadata["proxy_ip"] = proxyIp
+                                                    } catch (e: Exception) {
+                                                        LogInterceptor.w(TAG, "Failed to get proxy IP: ${e.message}")
+                                                    }
+                                                }
+                                                
+                                                // Proxy location if available
+                                                socksProxyManager?.getProxyLocation()?.let { location ->
+                                                    metadata["proxy_location_country"] = location.country
+                                                    metadata["proxy_location_state"] = location.state
+                                                    metadata["proxy_location_city"] = location.city
+                                                    metadata["proxy_location_timezone"] = location.timezone
+                                                    metadata["proxy_location_latitude"] = location.latitude
+                                                    metadata["proxy_location_longitude"] = location.longitude
+                                                    location.ip?.let { metadata["proxy_location_ip"] = it }
+                                                }
+                                                
+                                                LogInterceptor.i(TAG, "Uploading screenshot to server: $filename, URL: ${screenshotResult.url}, metadata: ${metadata.size} fields")
                                                 val uploadResult = withContext(Dispatchers.IO) {
                                                     apiClient.uploadScreenshot(
                                                         deviceId = deviceId ?: "",
                                                         taskId = task.id,
                                                         screenshotBytes = screenshotBytes,
                                                         filename = filename,
-                                                        pageUrl = screenshotResult.url
+                                                        pageUrl = screenshotResult.url,
+                                                        metadata = metadata
                                                     )
                                                 }
                                                 

@@ -160,6 +160,7 @@ export default function ArtifactsPage() {
               <img src={selectedArtifact.imageUrl} alt="Screenshot" />
             )}
             <div className="modal-info">
+              <h3>Основная информация</h3>
               <p><strong>ID:</strong> {selectedArtifact.id}</p>
               <p><strong>Тип:</strong> {selectedArtifact.type}</p>
               <p><strong>Размер:</strong> {formatSize(selectedArtifact.size)}</p>
@@ -170,6 +171,62 @@ export default function ArtifactsPage() {
               <p><strong>Task ID:</strong> {selectedArtifact.taskId}</p>
               <p><strong>Device ID:</strong> {selectedArtifact.deviceId}</p>
               <p><strong>Путь:</strong> {selectedArtifact.path}</p>
+              
+              {selectedArtifact.metadata && (
+                <>
+                  <h3 style={{ marginTop: '20px' }}>Идентификаторы устройства</h3>
+                  {selectedArtifact.metadata.device_android_id && (
+                    <p><strong>Android ID:</strong> {selectedArtifact.metadata.device_android_id}</p>
+                  )}
+                  {selectedArtifact.metadata.device_aaid && (
+                    <p><strong>AAID:</strong> {selectedArtifact.metadata.device_aaid}</p>
+                  )}
+                  {selectedArtifact.metadata.device_user_agent && (
+                    <p><strong>User-Agent:</strong> <span style={{ fontSize: '0.9em', wordBreak: 'break-all' }}>{selectedArtifact.metadata.device_user_agent}</span></p>
+                  )}
+                  {selectedArtifact.metadata.device_model && (
+                    <p><strong>Модель:</strong> {selectedArtifact.metadata.device_model}</p>
+                  )}
+                  {selectedArtifact.metadata.device_manufacturer && (
+                    <p><strong>Производитель:</strong> {selectedArtifact.metadata.device_manufacturer}</p>
+                  )}
+                  {selectedArtifact.metadata.device_timezone && (
+                    <p><strong>Таймзона:</strong> {selectedArtifact.metadata.device_timezone}</p>
+                  )}
+                  {selectedArtifact.metadata.device_locale && (
+                    <p><strong>Локаль:</strong> {selectedArtifact.metadata.device_locale}</p>
+                  )}
+                  
+                  <h3 style={{ marginTop: '20px' }}>Информация о прокси</h3>
+                  {selectedArtifact.metadata.proxy_id && (
+                    <p><strong>Прокси ID:</strong> {selectedArtifact.metadata.proxy_id}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_host && (
+                    <p><strong>Прокси хост:</strong> {selectedArtifact.metadata.proxy_host}:{selectedArtifact.metadata.proxy_port || 'N/A'}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_type && (
+                    <p><strong>Тип прокси:</strong> {selectedArtifact.metadata.proxy_type}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_country && (
+                    <p><strong>Страна прокси:</strong> {selectedArtifact.metadata.proxy_country}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_state && (
+                    <p><strong>Штат/Регион:</strong> {selectedArtifact.metadata.proxy_state}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_ip && (
+                    <p><strong>IP прокси:</strong> {selectedArtifact.metadata.proxy_ip}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_location_city && (
+                    <p><strong>Город:</strong> {selectedArtifact.metadata.proxy_location_city}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_location_timezone && (
+                    <p><strong>Таймзона прокси:</strong> {selectedArtifact.metadata.proxy_location_timezone}</p>
+                  )}
+                  {selectedArtifact.metadata.proxy_location_latitude && selectedArtifact.metadata.proxy_location_longitude && (
+                    <p><strong>Координаты:</strong> {selectedArtifact.metadata.proxy_location_latitude}, {selectedArtifact.metadata.proxy_location_longitude}</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

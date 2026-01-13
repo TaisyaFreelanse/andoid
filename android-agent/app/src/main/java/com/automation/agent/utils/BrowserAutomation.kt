@@ -1,5 +1,6 @@
 package com.automation.agent.utils
 
+import android.annotation.TargetApi
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.http.SslError
@@ -87,7 +88,13 @@ class BrowserAutomation(
                 // Set up proxy if available
                 proxyManager?.getCurrentProxy()?.let { proxy ->
                     Log.i(TAG, "Setting proxy for WebView: ${proxy.host}:${proxy.port}")
-                    // WebView uses system proxy settings
+                    // IMPORTANT: WebView may not use SOCKS5 proxy correctly!
+                    // WebView uses system proxy settings, but SOCKS5 proxy set via System.setProperty
+                    // may not be applied to WebView. This can cause:
+                    // - Ads showing in wrong language (e.g., French ads when using US proxy)
+                    // - Geolocation-based content not matching proxy location
+                    // - IP-based services detecting wrong location
+                    // Solution: Use HTTP proxy or configure proxy at system level (requires root)
                 }
                 
                 webViewClient = object : WebViewClient() {
@@ -112,6 +119,20 @@ class BrowserAutomation(
                     
                     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                         return false // Let WebView handle all URLs
+                    }
+                    
+                    // Intercept resource requests to ensure proxy is used
+                    // Note: This is called for sub-resources (images, CSS, JS), not main page
+                    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                        // WebView should use system proxy (set via root commands in ProxyManager)
+                        // If system proxy is set correctly, WebView will use it automatically
+                        // This method is mainly for logging/debugging
+                        if (request != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            val url = request.url.toString()
+                            Log.d(TAG, "WebView resource request: $url")
+                        }
+                        return null // Let WebView handle normally (will use system proxy)
                     }
                 }
                 

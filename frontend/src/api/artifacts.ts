@@ -10,6 +10,29 @@ export interface Artifact {
   mimeType: string | null;
   url: string | null; // URL страницы, на которой был сделан скриншот
   imageUrl: string | null; // Presigned URL для доступа к самому скриншоту
+  metadata: {
+    device_android_id?: string;
+    device_aaid?: string;
+    device_user_agent?: string;
+    device_model?: string;
+    device_manufacturer?: string;
+    device_timezone?: string;
+    device_locale?: string;
+    proxy_id?: string;
+    proxy_host?: string;
+    proxy_port?: number;
+    proxy_type?: string;
+    proxy_country?: string;
+    proxy_state?: string;
+    proxy_ip?: string;
+    proxy_location_country?: string;
+    proxy_location_state?: string;
+    proxy_location_city?: string;
+    proxy_location_timezone?: string;
+    proxy_location_latitude?: number;
+    proxy_location_longitude?: number;
+    proxy_location_ip?: string;
+  } | null;
   capturedAt: string;
   createdAt: string;
 }

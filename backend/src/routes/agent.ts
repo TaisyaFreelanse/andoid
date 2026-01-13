@@ -642,13 +642,46 @@ export async function agentRoutes(fastify: FastifyInstance) {
         logger.info({ pageUrl, deviceId, taskId }, 'Screenshot upload - page URL extracted');
       }
 
+      // Extract metadata from header or form data
+      let metadata: any = null;
+      
+      // Try header first (x-metadata)
+      const headerMetadata = request.headers['x-metadata'] as string;
+      if (headerMetadata) {
+        try {
+          metadata = JSON.parse(headerMetadata);
+          logger.info({ metadataKeys: Object.keys(metadata) }, 'Screenshot upload - metadata from header');
+        } catch (e) {
+          logger.warn({ error: e }, 'Failed to parse metadata from header');
+        }
+      } else if (data.fields && typeof data.fields === 'object') {
+        // Try form data
+        const fields = data.fields as any;
+        const metadataField = fields.metadata;
+        
+        if (metadataField) {
+          try {
+            const metadataStr = typeof metadataField === 'string' 
+              ? metadataField 
+              : (metadataField.value || (Array.isArray(metadataField) ? metadataField[0] : null));
+            
+            if (metadataStr && typeof metadataStr === 'string') {
+              metadata = JSON.parse(metadataStr);
+              logger.info({ metadataKeys: Object.keys(metadata) }, 'Screenshot upload - metadata from form data');
+            }
+          } catch (e) {
+            logger.warn({ error: e }, 'Failed to parse metadata from form data');
+          }
+        }
+      }
+
       const buffer = await data.toBuffer();
       const timestamp = new Date();
       const fileName = storageService.generateScreenshotPath(deviceId, taskId, timestamp);
       
       await storageService.uploadFile(buffer, fileName, 'image/png');
 
-      // Create artifact record
+      // Create artifact record with metadata
       const artifact = await prisma.artifact.create({
         data: {
           deviceId: deviceId,
@@ -658,6 +691,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
           size: buffer.length,
           mimeType: 'image/png',
           url: pageUrl,
+          metadata: metadata || undefined,
           capturedAt: timestamp,
         },
       });

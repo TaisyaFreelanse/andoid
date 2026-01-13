@@ -243,6 +243,7 @@ model Artifact {
   size       Int?     // file size in bytes
   mimeType   String?  @map("mime_type") @db.VarChar(100)
   url        String?  @db.Text // URL of the page where screenshot was taken
+  metadata   Json?    // Additional metadata: proxy info, device identifiers, IP, etc.
   capturedAt DateTime @default(now()) @map("captured_at")
   createdAt  DateTime @default(now()) @map("created_at")
 
