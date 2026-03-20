@@ -1,0 +1,186 @@
+{
+  "id": "google_search_ad_cycle",
+  "name": "Google поиск + парсинг рекламы + уникализация",
+  "description": "Поиск в Google → извлечение ссылок → обход каждой ссылки по очереди → скриншоты рекламных баннеров",
+  "version": "3.0",
+  "type": "automation",
+  "browser": "webview",
+  "proxy": "{{proxy_url}}",
+  "requires_root": true,
+  "timeout": 300000,
+  "retries": 2,
+  "config": {
+    "wait_for_ads": true,
+    "take_screenshots": true,
+    "human_like": true,
+    "random_delays": true,
+    "min_delay": 1500,
+    "max_delay": 4000,
+    "use_proxy_geolocation": true,
+    "auto_detect_country": true
+  },
+  "_____ЗАПОЛНИТЬ_____": "Ниже — единственное, что нужно менять",
+  "variables": {
+    "target_domain": "ВАШ-ДОМЕН.com",
+    "country_code": "US",
+    "proxy_url": "socks5://user:pass@host:port",
+    "loop_count": "5"
+  },
+
+  "actions": [
+    { "id": "a1", "type": "detect_proxy_location", "save_as": "proxy_location" },
+    { "id": "a2", "type": "change_timezone", "timezone": "auto", "country_code": "{{country_code}}" },
+    { "id": "a3", "type": "change_location", "latitude": "auto", "longitude": "auto", "country_code": "{{country_code}}" },
+    { "id": "a4", "type": "change_locale", "locale": "{{country_code}}" },
+    { "id": "a5", "type": "change_user_agent", "ua": "random", "locale": "{{country_code}}" },
+    { "id": "a6", "type": "regenerate_android_id" },
+    { "id": "a7", "type": "regenerate_aaid" },
+    { "id": "a8", "type": "clear_chrome_data" },
+    { "id": "a9", "type": "clear_webview_data" },
+    { "id": "a10", "type": "modify_build_prop", "params": { "ro.build.fingerprint": "random", "ro.product.model": "random" } }
+  ],
+
+  "steps": [
+    {
+      "id": "step_1_consent_cookie",
+      "type": "set_cookie",
+      "url": "https://www.google.com",
+      "value": "SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjQwMzEzLjA3X3AxGgJlbiADGgYIgI6tsgY; path=/; domain=.google.com; max-age=31536000; secure;;CONSENT=YES+eur.20240101-0; path=/; domain=.google.com; max-age=31536000",
+      "optional": true
+    },
+    {
+      "id": "step_2_google_search",
+      "type": "navigate",
+      "url": "https://www.google.com/search?q=site%3A{{target_domain}}&ie=UTF-8",
+      "wait_for_load": true,
+      "timeout": 30000
+    },
+    {
+      "id": "step_3_wait",
+      "type": "wait",
+      "duration": 4000
+    },
+    {
+      "id": "step_4_consent_tap",
+      "type": "native_tap",
+      "value": "0.5,0.82",
+      "optional": true
+    },
+    {
+      "id": "step_5_wait",
+      "type": "wait",
+      "duration": 2000
+    },
+    {
+      "id": "step_6_scroll",
+      "type": "scroll",
+      "direction": "down",
+      "pixels": 400,
+      "smooth": true
+    },
+    {
+      "id": "step_7_wait",
+      "type": "wait",
+      "duration": 1500
+    },
+    {
+      "id": "step_8_extract_links",
+      "type": "extract",
+      "selector": "a[href*='{{target_domain}}']",
+      "attribute": "href",
+      "save_as": "site_links",
+      "multiple": true
+    },
+
+    {
+      "id": "step_navigate_target_site",
+      "type": "navigate",
+      "from_results": "site_links",
+      "loadTimeout": 20000,
+      "waitAfter": 5000
+    },
+
+    {
+      "id": "step_banner_loop",
+      "type": "loop",
+      "max_iterations": "{{loop_count}}",
+      "steps": [
+        {
+          "id": "loop_1_wait",
+          "type": "wait",
+          "duration": 5000,
+          "random_offset": 2000
+        },
+        {
+          "id": "loop_2_screenshot_top",
+          "type": "screenshot",
+          "save_as": "ad_banner_top"
+        },
+        {
+          "id": "loop_3_scroll",
+          "type": "scroll",
+          "direction": "down",
+          "pixels": 600,
+          "smooth": true
+        },
+        {
+          "id": "loop_4_wait",
+          "type": "wait",
+          "duration": 2500,
+          "random_offset": 1000
+        },
+        {
+          "id": "loop_5_screenshot_mid",
+          "type": "screenshot",
+          "save_as": "ad_banner_middle"
+        },
+        {
+          "id": "loop_6_extract_ads",
+          "type": "extract",
+          "selector": "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], iframe[src*='googleads'], iframe[src*='doubleclick']",
+          "attribute": "href",
+          "save_as": "ad_links",
+          "multiple": true,
+          "optional": true
+        },
+        {
+          "id": "loop_7_scroll",
+          "type": "scroll",
+          "direction": "down",
+          "pixels": 800,
+          "smooth": true
+        },
+        {
+          "id": "loop_8_wait",
+          "type": "wait",
+          "duration": 2000,
+          "random_offset": 800
+        },
+        {
+          "id": "loop_9_screenshot_bottom",
+          "type": "screenshot",
+          "save_as": "ad_banner_bottom"
+        },
+        {
+          "id": "loop_10_pause",
+          "type": "wait",
+          "duration": 2000,
+          "random_offset": 1000
+        }
+      ]
+    }
+  ],
+
+  "post_process": {
+    "extract_adurl": true,
+    "deduplicate_domains": true,
+    "save_to_backend": true,
+    "log_visited_urls": true,
+    "send_to_backend": true
+  },
+  "output": {
+    "format": "json",
+    "include_screenshots": true,
+    "include_metadata": true
+  }
+}
