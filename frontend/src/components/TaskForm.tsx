@@ -140,7 +140,7 @@ function actionsToSteps(actions: ActionBlock[], domain: string): any[] {
           });
           steps.push({
             id: stepId, type: 'navigate',
-            url: `https://www.google.com/search?q=site%3A{{target_domain}}&ie=UTF-8`,
+            url: `https://www.google.com/search?q=site%3A${domain}&ie=UTF-8`,
             wait_for_load: true, timeout: 30000,
           });
         } else if (action.url === '{{from_results}}') {
@@ -176,7 +176,7 @@ function actionsToSteps(actions: ActionBlock[], domain: string): any[] {
         steps.push({
           id: stepId, type: 'extract',
           selector: action.selector === '{{domain_links}}'
-            ? `a[href*='{{target_domain}}']`
+            ? `a[href*='${domain}']`
             : (action.selector || 'a'),
           attribute: action.attribute || 'href',
           save_as: action.saveName || 'data',
@@ -223,7 +223,7 @@ function buildScenarioJson(fields: FormFields): object {
     name: fields.name,
     type: 'automation',
     browser: 'webview',
-    proxy: '{{proxy_url}}',
+    proxy: fields.proxy || '',
     requires_root: true,
     timeout: 300000,
     retries: 2,
@@ -240,15 +240,15 @@ function buildScenarioJson(fields: FormFields): object {
     variables: {
       target_domain: fields.targetDomain,
       country_code: fields.countryCode,
-      proxy_url: fields.proxy || 'socks5://user:pass@host:port',
+      proxy_url: fields.proxy || '',
       loop_count: String(fields.loopCount),
     },
     actions: [
       { id: 'a1', type: 'detect_proxy_location', save_as: 'proxy_location' },
-      { id: 'a2', type: 'change_timezone', timezone: 'auto', country_code: '{{country_code}}' },
-      { id: 'a3', type: 'change_location', latitude: 'auto', longitude: 'auto', country_code: '{{country_code}}' },
-      { id: 'a4', type: 'change_locale', locale: '{{country_code}}' },
-      { id: 'a5', type: 'change_user_agent', ua: 'random', locale: '{{country_code}}' },
+      { id: 'a2', type: 'change_timezone', timezone: 'auto', country_code: fields.countryCode },
+      { id: 'a3', type: 'change_location', latitude: 'auto', longitude: 'auto', country_code: fields.countryCode },
+      { id: 'a4', type: 'change_locale', locale: fields.countryCode },
+      { id: 'a5', type: 'change_user_agent', ua: 'random', locale: fields.countryCode },
       { id: 'a6', type: 'regenerate_android_id' },
       { id: 'a7', type: 'regenerate_aaid' },
       { id: 'a8', type: 'clear_chrome_data' },
