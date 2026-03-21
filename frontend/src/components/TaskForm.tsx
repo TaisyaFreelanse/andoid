@@ -124,6 +124,26 @@ const SIMPLE_PARSE_TEMPLATE: ActionBlock[] = [
   { id: uid(), type: 'screenshot', saveName: 'page_result' },
 ];
 
+/** Открыть api.ipify.org и скрин — на картинке один IP; сравни с прокси / без прокси. */
+const PROXY_IP_CHECK_TEMPLATE: ActionBlock[] = [
+  { id: uid(), type: 'navigate', url: 'https://api.ipify.org' },
+  { id: uid(), type: 'wait', duration: 2 },
+  { id: uid(), type: 'screenshot', saveName: 'ip_check' },
+];
+
+/** Копия шаблона с новыми id (вложенные loop тоже). */
+function cloneActionTemplate(template: ActionBlock[]): ActionBlock[] {
+  const fresh = JSON.parse(JSON.stringify(template)) as ActionBlock[];
+  const assignIds = (actions: ActionBlock[]) => {
+    for (const a of actions) {
+      a.id = uid();
+      if (a.loopActions) assignIds(a.loopActions);
+    }
+  };
+  assignIds(fresh);
+  return fresh;
+}
+
 /** Все вхождения site:example.com / site%3Aexample.com в строке (для вложенных Google URL). */
 function collectSiteDomainsFromText(s: string): string[] {
   const decoded = (() => {
@@ -277,7 +297,14 @@ function actionsToSteps(actions: ActionBlock[], rawDomain: string): any[] {
         if (action.text) {
           steps.push({ id: `step_${stepIdx}`, type: 'click_text', value: action.text });
         } else {
-          steps.push({ id: `step_${stepIdx}`, type: 'click', selector: action.selector || 'button' });
+          const sel = (action.selector || '').trim();
+          // Пустой селектор → пробуем button, но не валим задачу (на многих сайтах нет <button>)
+          steps.push({
+            id: `step_${stepIdx}`,
+            type: 'click',
+            selector: sel || 'button',
+            ...(!sel ? { optional: true } : {}),
+          });
         }
         break;
       case 'loop':
@@ -418,13 +445,16 @@ function ActionBlockCard({
             onChange={e => onChange({ ...action, saveName: e.target.value })} />
         )}
         {action.type === 'click' && (
-          <div className="inline-fields">
-            <input type="text" placeholder="CSS-селектор"
-              value={action.selector || ''}
-              onChange={e => onChange({ ...action, selector: e.target.value })} />
-            <input type="text" placeholder="или текст кнопки"
-              value={action.text || ''}
-              onChange={e => onChange({ ...action, text: e.target.value })} />
+          <div className="click-block">
+            <div className="inline-fields">
+              <input type="text" placeholder="CSS (например a.menu, .btn) — пусто = button, шаг необязательный"
+                value={action.selector || ''}
+                onChange={e => onChange({ ...action, selector: e.target.value })} />
+              <input type="text" placeholder="или текст кнопки (click_text)"
+                value={action.text || ''}
+                onChange={e => onChange({ ...action, text: e.target.value })} />
+            </div>
+            <p className="field-hint">Если селектор пустой, агент ищет <code>button</code> и не падает, если не нашёл.</p>
           </div>
         )}
         {action.type === 'loop' && (
@@ -503,6 +533,7 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [formNotice, setFormNotice] = useState('');
   const [showJson, setShowJson] = useState(false);
 
   useEffect(() => { loadDevices(); }, []);
@@ -532,21 +563,63 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
   }, [fields]);
 
   const applyTemplate = (template: ActionBlock[], name: string) => {
-    const fresh = JSON.parse(JSON.stringify(template)) as ActionBlock[];
-    const assignIds = (actions: ActionBlock[]) => {
-      for (const a of actions) {
-        a.id = uid();
-        if (a.loopActions) assignIds(a.loopActions);
-      }
-    };
-    assignIds(fresh);
+    const fresh = cloneActionTemplate(template);
     updateField('actions', fresh);
     if (!fields.name) updateField('name', name);
+  };
+
+  /** Шаблон + тот же JSON в редакторе + синхронные fields.actions (удобно из режима JSON). */
+  const applyTemplateToFieldsAndJson = (
+    template: ActionBlock[],
+    defaultName: string,
+    opts?: { allowEmptyDomain?: boolean },
+  ) => {
+    const fresh = cloneActionTemplate(template);
+    const raw = fields.targetDomain.trim();
+    const hadDomain = raw.length > 0;
+    if (!hadDomain) {
+      setFormNotice(
+        opts?.allowEmptyDomain
+          ? 'Домен пуст — для сценария подставлен example.com. Впиши свой домен в поле «Цель» и снова нажми этот шаблон.'
+          : 'Домен не указан — подставлен example.com. Укажи свой домен в «Цели» и снова нажми шаблон или «Из формы».',
+      );
+    } else {
+      setFormNotice('');
+    }
+    const next: FormFields = {
+      ...fields,
+      actions: fresh,
+      name: fields.name || defaultName,
+      targetDomain: hadDomain ? fields.targetDomain : 'example.com',
+    };
+    setFields(next);
+    setConfigJson(JSON.stringify(buildScenarioJson(next), null, 2));
+    setError('');
+  };
+
+  /** Самый простой тест прокси: IP на скрине с прокси vs без прокси. */
+  const applyIpCheckTemplate = () => {
+    const fresh = cloneActionTemplate(PROXY_IP_CHECK_TEMPLATE);
+    const next: FormFields = {
+      ...fields,
+      actions: fresh,
+      name: fields.name || 'Проверка IP (прокси)',
+      targetDomain: fields.targetDomain.trim() || 'api.ipify.org',
+    };
+    setFields(next);
+    setError('');
+    setFormNotice(
+      'С прокси в поле выше нажми «Создать», потом открой скрин **ip_check** в результате — там внешний IP. Повтори задачу с **пустым** прокси: если IP другой, прокси реально меняет выход.',
+    );
+    if (mode === 'advanced') {
+      setConfigJson(JSON.stringify(buildScenarioJson(next), null, 2));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setFormNotice('');
 
     let parsedConfig: any;
 
@@ -557,9 +630,22 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
         setError('Неверный JSON');
         return;
       }
+      const steps = parsedConfig?.steps;
+      if (!Array.isArray(steps) || steps.length === 0) {
+        setError(
+          'В JSON нет шагов (steps пустой). В простом режиме нажми «Google + Реклама» или «Простой парсинг», затем «Из формы» — или вставь свой JSON со списком steps.',
+        );
+        return;
+      }
     } else {
       if (!fields.targetDomain.trim()) {
         setError('Укажите домен / URL сайта');
+        return;
+      }
+      if (fields.actions.length === 0) {
+        setError(
+          'Нет действий: нажми «Google + Реклама», «Простой парсинг» или «+ Добавить действие» — иначе задача сразу завершится без браузера.',
+        );
         return;
       }
       parsedConfig = buildScenarioJson(fields);
@@ -586,16 +672,46 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
       <form onSubmit={handleSubmit} className="task-form">
 
         <div className="form-header">
-          <h3>Создать задачу</h3>
+          <div className="form-header-titles">
+            <h3>Создать задачу</h3>
+            <span className="ui-build-tag" title="Если эта метка не совпадает с последней — сайт на Render ещё со старой сборкой. Сделай push в main и дождись деплоя.">
+              UI: {__UI_BUILD_TAG__}
+            </span>
+          </div>
           <div className="mode-switch">
             <button type="button" className={`mode-btn ${mode === 'simple' ? 'active' : ''}`}
-              onClick={() => setMode('simple')}>Простой</button>
+              onClick={() => { setMode('simple'); setFormNotice(''); }}>Простой</button>
             <button type="button" className={`mode-btn ${mode === 'advanced' ? 'active' : ''}`}
-              onClick={() => { setMode('advanced'); setConfigJson(generatedJson); }}>JSON</button>
+              onClick={() => {
+                setMode('advanced');
+                setConfigJson(generatedJson);
+                if (fields.actions.length === 0) {
+                  setError('');
+                  setFormNotice('Сейчас нет действий — JSON с пустым steps. Нажми «Google + Реклама» или «Простой парсинг» ниже, либо переключись в «Простой» и выбери шаблон.');
+                } else {
+                  setError('');
+                  setFormNotice('');
+                }
+              }}>JSON</button>
           </div>
         </div>
 
         {error && <div className="error-message">{error}</div>}
+        {formNotice && !error && <div className="form-notice">{formNotice}</div>}
+
+        {/* Самый верх формы: не зависит от режима Простой/JSON; видно сразу после открытия */}
+        <div className="form-card proxy-verify-card proxy-verify-card-top">
+          <div className="proxy-verify-badge">API / IP</div>
+          <div className="card-title proxy-verify-title">Проверка прокси — внешний IP</div>
+          <p className="proxy-verify-text">
+            Впиши прокси в блоке «Цель» ниже (или оставь пустым). Нажми кнопку — подставятся шаги:{' '}
+            <strong>api.ipify.org</strong> + скрин <code>ip_check</code>. Потом <strong>Создать</strong> внизу.
+            Два запуска (с прокси и без) — сравни IP на скринах.
+          </p>
+          <button type="button" className="proxy-ip-check-btn proxy-ip-check-btn-large" onClick={applyIpCheckTemplate}>
+            Собрать сценарий проверки IP
+          </button>
+        </div>
 
         {mode === 'simple' ? (
           <>
@@ -655,6 +771,7 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
                     <label>Прокси</label>
                     <input type="text" placeholder="socks5://user:pass@host:port"
                       value={fields.proxy} onChange={e => updateField('proxy', e.target.value)} />
+                    <span className="label-hint-inline">проверка — зелёный блок вверху формы ↑</span>
                   </div>
                 </div>
               </div>
@@ -673,12 +790,16 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
                     onClick={() => applyTemplate(SIMPLE_PARSE_TEMPLATE, 'Простой парсинг')}>
                     Простой парсинг
                   </button>
+                  <button type="button" className="template-btn template-btn-accent"
+                    onClick={applyIpCheckTemplate}>
+                    Проверка IP
+                  </button>
                 </div>
               </div>
               <div className="actions-list">
                 {fields.actions.length === 0 && (
                   <div className="actions-empty">
-                    Нет действий. Выберите шаблон или добавьте вручную.
+                    Нет действий. Сверху формы — зелёный блок проверки IP; здесь — шаблоны Google / парсинг или «+ Добавить действие».
                   </div>
                 )}
                 {fields.actions.map((a, i) => (
@@ -735,18 +856,60 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
               <span className="card-title">JSON-редактор</span>
               <div className="template-buttons">
                 <button type="button" className="template-btn"
-                  onClick={() => setConfigJson(generatedJson)}>
+                  onClick={() => {
+                    setConfigJson(generatedJson);
+                    if (fields.actions.length === 0) {
+                      setError('');
+                      setFormNotice('Список действий пуст — в JSON попадёт пустой steps. Сначала выбери шаблон в «Простом» или нажми «Google + Реклама» / «Простой парсинг» здесь.');
+                    } else {
+                      setError('');
+                      setFormNotice('');
+                    }
+                  }}>
                   Из формы
                 </button>
                 <button type="button" className="template-btn"
-                  onClick={() => setConfigJson(JSON.stringify(buildScenarioJson({
-                    ...fields,
-                    name: 'Google Search + Ads',
-                    targetDomain: 'example.com',
-                    actions: JSON.parse(JSON.stringify(GOOGLE_ADS_TEMPLATE)),
-                  }), null, 2))}>
-                  Шаблон: Google + Ads
+                  onClick={() => applyTemplateToFieldsAndJson(GOOGLE_ADS_TEMPLATE, 'Google Search + Реклама')}>
+                  Google + Реклама
                 </button>
+                <button type="button" className="template-btn"
+                  onClick={() => applyTemplateToFieldsAndJson(SIMPLE_PARSE_TEMPLATE, 'Простой парсинг', { allowEmptyDomain: true })}>
+                  Простой парсинг
+                </button>
+                <button type="button" className="template-btn template-btn-accent"
+                  onClick={applyIpCheckTemplate}>
+                  Проверка IP
+                </button>
+              </div>
+            </div>
+            <p className="json-mode-hint">
+              Оба режима отправляют один и тот же сценарий на телефон. «Из формы» подставляет карточки из «Простого»;
+              кнопки шаблонов здесь сразу заполняют JSON и список действий. После смены домена/прокси нажми «Из формы» или шаблон снова.
+            </p>
+            <div className="json-target-section">
+              <div className="card-title">Цель (и для JSON тоже)</div>
+              <div className="card-fields">
+                <div className="form-group">
+                  <label>Домен / URL сайта</label>
+                  <input type="text" placeholder="mysite.com"
+                    value={fields.targetDomain} onChange={e => updateField('targetDomain', e.target.value)} />
+                </div>
+                <div className="form-row">
+                  <div className="form-group flex-1">
+                    <label>Страна</label>
+                    <select value={fields.countryCode} onChange={e => updateField('countryCode', e.target.value)}>
+                      {COUNTRIES.map(c => (
+                        <option key={c.code} value={c.code}>{c.code} — {c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group flex-1">
+                    <label>Прокси</label>
+                    <input type="text" placeholder="socks5://user:pass@host:port"
+                      value={fields.proxy} onChange={e => updateField('proxy', e.target.value)} />
+                    <span className="label-hint-inline">проверка — зелёный блок вверху формы ↑</span>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="form-row" style={{ marginBottom: '1rem' }}>
