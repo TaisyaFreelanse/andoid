@@ -32,27 +32,25 @@ class ProxyManager {
         private const val HEALTH_CHECK_URL = "https://api.ipify.org"
 
         /**
-         * Parse SOCKS5 proxy string: socks5://host:port:username:password
+         * Parse SOCKS5 proxy string.
+         * Supports: socks5://host:port | socks5://user:pass@host:port | socks5://host:port:user:pass
          */
         fun parseSocks5(proxyString: String): ProxyConfig? {
-            // Format: socks5://host:port:username:password
-            val regex = Regex("socks5://([^:]+):(\\d+):([^:]+):(.+)")
-            val match = regex.find(proxyString)
-            
-            if (match != null) {
+            val s = proxyString.trim()
+            if (!s.startsWith("socks5://")) return null
+            // Format: socks5://host:port (no auth)
+            val noAuthRegex = Regex("socks5://([^:/]+):(\\d+)")
+            val noAuthMatch = noAuthRegex.find(s)
+            if (noAuthMatch != null && !s.contains("@")) {
                 return ProxyConfig(
                     type = ProxyType.SOCKS5,
-                    host = match.groupValues[1],
-                    port = match.groupValues[2].toInt(),
-                    username = match.groupValues[3],
-                    password = match.groupValues[4]
+                    host = noAuthMatch.groupValues[1],
+                    port = noAuthMatch.groupValues[2].toInt()
                 )
             }
-            
-            // Alternative format: socks5://username:password@host:port
+            // Format: socks5://username:password@host:port
             val altRegex = Regex("socks5://([^:]+):([^@]+)@([^:]+):(\\d+)")
-            val altMatch = altRegex.find(proxyString)
-            
+            val altMatch = altRegex.find(s)
             if (altMatch != null) {
                 return ProxyConfig(
                     type = ProxyType.SOCKS5,
@@ -62,7 +60,18 @@ class ProxyManager {
                     password = altMatch.groupValues[2]
                 )
             }
-            
+            // Format: socks5://host:port:username:password
+            val regex = Regex("socks5://([^:]+):(\\d+):([^:]+):(.+)")
+            val match = regex.find(s)
+            if (match != null) {
+                return ProxyConfig(
+                    type = ProxyType.SOCKS5,
+                    host = match.groupValues[1],
+                    port = match.groupValues[2].toInt(),
+                    username = match.groupValues[3],
+                    password = match.groupValues[4]
+                )
+            }
             return null
         }
 

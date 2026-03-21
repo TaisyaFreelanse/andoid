@@ -28,6 +28,7 @@ import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
+import com.google.gson.JsonPrimitive
 
 /**
  * ControllerService - Background service for device registration and heartbeat
@@ -1954,10 +1955,18 @@ class ControllerService : LifecycleService() {
         } ?: emptyList()
         
         val proxyRaw = task.config?.get("proxy")
-        val proxy = when (proxyRaw) {
-            is String -> if (proxyRaw.isNotBlank()) proxyRaw else null
-            else -> proxyRaw?.toString()?.takeIf { it.isNotBlank() }
+        val proxy = when {
+            proxyRaw is String -> proxyRaw.takeIf { it.isNotBlank() }
+            proxyRaw != null -> {
+                val s = when (proxyRaw) {
+                    is JsonPrimitive -> proxyRaw.asString
+                    else -> proxyRaw.toString().trim().removeSurrounding("\"")
+                }
+                s.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            }
+            else -> null
         }
+        Log.i(TAG, "Task proxy from config: ${proxy?.take(20)?.let { "$it..." } ?: "null"}")
         return TaskExecutor.TaskConfig(
             id = task.id,
             name = task.name,

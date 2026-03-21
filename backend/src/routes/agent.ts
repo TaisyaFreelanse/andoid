@@ -212,6 +212,53 @@ export async function agentRoutes(fastify: FastifyInstance) {
     return response;
   });
 
+  // GET tasks for device (same format as heartbeat tasks, for pollTasks)
+  fastify.get('/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
+    const deviceId = (request.headers['x-device-id'] || request.headers['deviceid'] || (request.query as any)?.deviceId) as string;
+    const token = (request.headers['x-agent-token'] || request.headers['agenttoken']) as string;
+
+    if (!deviceId) {
+      return reply.status(401).send({ error: { message: 'Missing device ID', code: 'MISSING_CREDENTIALS' } });
+    }
+
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || (token && device.agentToken !== token)) {
+      return reply.status(401).send({ error: { message: 'Invalid device', code: 'INVALID_CREDENTIALS' } });
+    }
+
+    const tasks = await prisma.task.findMany({
+      where: { deviceId, status: { in: ['pending', 'assigned'] } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const result = tasks.map((task) => {
+      const configJson = task.configJson as any;
+      let steps: any[] = [];
+      if (task.type === 'uniqueness' && configJson?.actions) {
+        steps = configJson.actions.map((action: any, i: number) => {
+          const { type, id, description, ...actionConfig } = action;
+          return { type, id: id || `action_${i + 1}`, description, config: actionConfig };
+        });
+      } else if (configJson?.steps) {
+        steps = configJson.steps.map((step: any) => {
+          const { type, ...stepConfig } = step;
+          return { type, config: stepConfig };
+        });
+      }
+      return {
+        id: task.id,
+        name: task.name,
+        type: task.type,
+        status: task.status,
+        priority: 0,
+        config: configJson,
+        steps,
+      };
+    });
+
+    return result;
+  });
+
   
   // Update task status endpoint (for Android Agent)
   fastify.put('/tasks/:taskId/status', async (request: FastifyRequest<{ Params: { taskId: string } }>, reply: FastifyReply) => {

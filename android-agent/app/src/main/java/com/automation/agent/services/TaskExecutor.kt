@@ -2375,19 +2375,20 @@ class TaskExecutor(
      * Apply uniqueness settings (proxy, timezone, geolocation, language)
      */
     private suspend fun applyUniqueness(proxyString: String) {
-        if (proxyString == "auto" || proxyString.isEmpty()) {
-            Log.i(TAG, "Proxy is 'auto', skipping uniqueness")
+        val trimmed = proxyString.trim()
+        if (trimmed == "auto" || trimmed.isEmpty()) {
+            Log.i(TAG, "Proxy is 'auto' or empty, skipping uniqueness")
             return
         }
 
-        Log.i(TAG, "Applying uniqueness with proxy: $proxyString")
+        Log.i(TAG, "Applying uniqueness with proxy: $trimmed")
 
         try {
             // 1. Parse and apply proxy for HTTP clients (OkHttp)
             val proxyConfig = when {
-                proxyString.startsWith("socks5://") -> ProxyManager.parseSocks5(proxyString)
-                proxyString.startsWith("http://") || proxyString.startsWith("https://") -> ProxyManager.parseHttp(proxyString)
-                else -> ProxyManager.parse(proxyString)
+                trimmed.startsWith("socks5://") -> ProxyManager.parseSocks5(trimmed)
+                trimmed.startsWith("http://") || trimmed.startsWith("https://") -> ProxyManager.parseHttp(trimmed)
+                else -> ProxyManager.parse(trimmed)
             }
 
             if (proxyConfig != null) {
@@ -2396,7 +2397,7 @@ class TaskExecutor(
                 apiClient.updateProxy()
                 Log.i(TAG, "Network proxy applied: ${proxyConfig.host}:${proxyConfig.port}")
             } else {
-                Log.w(TAG, "Failed to parse proxy: $proxyString")
+                Log.w(TAG, "Failed to parse proxy: $trimmed")
                 return
             }
 
@@ -2405,7 +2406,7 @@ class TaskExecutor(
             if (spm != null && proxyConfig != null) {
                 val socksConfig = SocksProxyManager.ProxyConfig(
                     id = "task_proxy",
-                    type = if (proxyString.startsWith("socks5://")) "socks5" else "http",
+                    type = if (trimmed.startsWith("socks5://")) "socks5" else "http",
                     host = proxyConfig.host,
                     port = proxyConfig.port,
                     username = proxyConfig.username ?: "",
