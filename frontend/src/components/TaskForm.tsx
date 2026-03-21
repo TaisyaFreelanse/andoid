@@ -705,8 +705,7 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
           <div className="proxy-verify-badge">API / IP</div>
           <div className="card-title proxy-verify-title">Проверка прокси — внешний IP</div>
           <p className="proxy-verify-text">
-            Впиши прокси в блоке «Цель» ниже (или оставь пустым). Нажми кнопку — подставятся шаги:{' '}
-            <strong>api.ipify.org?format=json</strong> + извлечение в <code>ip_address</code> (JSON с полем ip) + скрин. Два запуска — сравни <code>ip_address</code>.
+            В поле <strong>«Прокси»</strong> ниже впиши <code>socks5://user:pass@host:port</code> или оставь пустым. Нажми кнопку → шаги: <strong>api.ipify.org?format=json</strong> + <code>ip_address</code> + скрин. <strong>1-й запуск без прокси</strong> → IP_1. <strong>2-й запуск с прокси</strong> → IP_2. Если IP_1 ≠ IP_2 — прокси работает.
           </p>
           <button type="button" className="proxy-ip-check-btn proxy-ip-check-btn-large" onClick={applyIpCheckTemplate}>
             Собрать сценарий проверки IP

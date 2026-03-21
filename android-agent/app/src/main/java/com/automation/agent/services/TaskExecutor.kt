@@ -537,8 +537,31 @@ class TaskExecutor(
         Log.d(TAG, "Extracting data: selector='$selector', attribute='$attribute', saveAs='$saveAs'")
         
         return try {
-            // Try JavaScript extraction first (more reliable for WebView)
-            var results = extractViaJavaScript(browser, selector, attribute)
+            var results: List<String>
+            // For ip_address: prefer OkHttp via proxy (works without root; WebView needs root for system proxy)
+            if (saveAs == "ip_address") {
+                val proxy = proxyManager.getCurrentProxy()
+                if (proxy != null) {
+                    val ipViaProxy = withContext(Dispatchers.IO) {
+                        try {
+                            proxyManager.getCurrentIp(proxy)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "OkHttp proxy IP fetch failed: ${e.message}")
+                            null
+                        }
+                    }
+                    if (!ipViaProxy.isNullOrBlank()) {
+                        Log.i(TAG, "ip_address from OkHttp (proxy): $ipViaProxy")
+                        results = listOf(ipViaProxy.trim())
+                    } else {
+                        results = extractViaJavaScript(browser, selector, attribute)
+                    }
+                } else {
+                    results = extractViaJavaScript(browser, selector, attribute)
+                }
+            } else {
+                results = extractViaJavaScript(browser, selector, attribute)
+            }
             
             // For ip_address: parse JSON {"ip":"x.x.x.x"} from api.ipify.org?format=json
             if (saveAs == "ip_address" && results.isNotEmpty()) {
