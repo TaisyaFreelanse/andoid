@@ -193,7 +193,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
           });
         }
         
-        logger.info({ taskId: task.id, stepsCount: steps.length, stepTypes: steps.map((s: any) => s.type) }, 'Preparing task for Android Agent');
+        logger.info({ taskId: task.id, stepsCount: steps.length, stepTypes: steps.map((s: any) => s.type), proxy: configJson?.proxy || 'null' }, 'Preparing task for Android Agent');
         
         return {
           id: task.id,

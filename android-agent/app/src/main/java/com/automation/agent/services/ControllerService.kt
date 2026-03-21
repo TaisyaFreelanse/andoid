@@ -929,6 +929,7 @@ class ControllerService : LifecycleService() {
                     "surfing", "parsing", "screenshot" -> {
                         // Execute via TaskExecutor with type-specific handling
                         val taskConfig = convertToTaskConfig(task)
+                        safeSendLog("info", TAG, "PROXY: task.proxy=${taskConfig.proxy?.take(30)?.let { "$it..." } ?: "null"} (для ip_address нужен socks5://user:pass@host:port)")
                         val result = taskExecutor.executeTask(taskConfig)
                         
                         if (result.success) {
@@ -1954,18 +1955,19 @@ class ControllerService : LifecycleService() {
             )
         } ?: emptyList()
         
-        val proxyRaw = task.config?.get("proxy")
-        val proxy = when {
-            proxyRaw is String -> proxyRaw.takeIf { it.isNotBlank() }
-            proxyRaw != null -> {
-                val s = when (proxyRaw) {
-                    is JsonPrimitive -> proxyRaw.asString
-                    else -> proxyRaw.toString().trim().removeSurrounding("\"")
-                }
-                s.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        fun extractString(key: String, from: Map<String, Any>?): String? {
+            val raw = from?.get(key) ?: return null
+            return when {
+                raw is String -> raw.takeIf { it.isNotBlank() }
+                raw is JsonPrimitive -> raw.asString.takeIf { it.isNotBlank() }
+                else -> raw.toString().trim().removeSurrounding("\"").takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
             }
-            else -> null
         }
+        @Suppress("UNCHECKED_CAST")
+        val variables = task.config?.get("variables") as? Map<String, Any>
+        val proxy = extractString("proxy", task.config)
+            ?: extractString("proxy_url", variables)
+            ?: (variables?.get("proxy_url") as? String)?.takeIf { it.isNotBlank() }
         Log.i(TAG, "Task proxy from config: ${proxy?.take(20)?.let { "$it..." } ?: "null"}")
         return TaskExecutor.TaskConfig(
             id = task.id,
