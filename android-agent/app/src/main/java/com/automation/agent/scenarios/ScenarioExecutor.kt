@@ -3,12 +3,14 @@ package com.automation.agent.scenarios
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import android.webkit.CookieManager
 import com.automation.agent.automation.DataExtractor
 import com.automation.agent.automation.Navigator
 import com.automation.agent.automation.Parser
 import com.automation.agent.automation.Screenshot
 import com.automation.agent.browser.BrowserController
 import com.automation.agent.browser.BrowserSelector
+import com.automation.agent.browser.WebViewController
 import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
 import com.automation.agent.services.UniquenessService
@@ -80,22 +82,35 @@ class ScenarioExecutor(
         }
         
         try {
-            // Initialize based on scenario type
+            val hasBrowserSteps = resolvedScenario.steps.isNotEmpty()
+            val hasUniquenessActions = resolvedScenario.actions.isNotEmpty()
+
             when (resolvedScenario.type) {
                 "parsing", "surfing", "automation" -> {
-                    initializeBrowser(resolvedScenario)
+                    if (hasUniquenessActions) initializeUniqueness()
+                    if (hasBrowserSteps) initializeBrowser(resolvedScenario)
                 }
                 "uniqueness" -> {
                     initializeUniqueness()
                 }
             }
-            
-            // Execute steps or actions
-            val success = when (resolvedScenario.type) {
-                "parsing", "surfing", "automation" -> {
+
+            val success = when {
+                // Combined mode: actions (setup) → steps (work), actions re-run between loop iterations
+                resolvedScenario.type in listOf("parsing", "surfing", "automation") && hasUniquenessActions && hasBrowserSteps -> {
+                    Log.i(TAG, "Combined mode: running ${resolvedScenario.actions.size} setup actions, then ${resolvedScenario.steps.size} steps")
+                    val actionsOk = executeActions(resolvedScenario.actions, resolvedScenario.config, stepResults)
+                    if (!actionsOk) {
+                        Log.e(TAG, "Setup actions failed, aborting scenario")
+                        false
+                    } else {
+                        executeStepsWithUniquenessLoop(resolvedScenario, stepResults)
+                    }
+                }
+                resolvedScenario.type in listOf("parsing", "surfing", "automation") -> {
                     executeSteps(resolvedScenario.steps, resolvedScenario.config, stepResults)
                 }
-                "uniqueness" -> {
+                resolvedScenario.type == "uniqueness" -> {
                     executeActions(resolvedScenario.actions, resolvedScenario.config, stepResults)
                 }
                 else -> {
@@ -187,6 +202,11 @@ class ScenarioExecutor(
                 "navigate" -> executeNavigate(step)
                 "wait" -> executeWait(step)
                 "click" -> executeClick(step)
+                "click_text" -> executeClickByText(step)
+                "javascript" -> executeJavascript(step)
+                "set_cookie" -> executeSetCookie(step)
+                "native_swipe" -> executeNativeSwipe(step)
+                "native_tap" -> executeNativeTap(step)
                 "input" -> executeInput(step, config)
                 "scroll" -> executeScroll(step)
                 "extract" -> executeExtract(step)
@@ -340,6 +360,219 @@ class ScenarioExecutor(
         return false
     }
 
+    /**
+     * Click a button/link by its visible text content.
+     * Searches all buttons, links, and [role=button] elements for text that contains step.value.
+     * Falls back to CSS selector in step.selector if text match fails.
+     */
+    private suspend fun executeClickByText(step: Step): Boolean {
+        val textToFind = step.value ?: return false
+        val escapedText = textToFind.replace("\\", "\\\\").replace("'", "\\'")
+
+        // Phase 1: Find the button and scroll it into view (within its own container, NOT the page)
+        val findScript = """
+            (function() {
+                var searchTexts = '$escapedText'.split('|');
+
+                function findBtn(doc) {
+                    var candidates = doc.querySelectorAll('button, a, [role="button"], input[type="submit"], div[role="button"]');
+                    for (var t = 0; t < searchTexts.length; t++) {
+                        var target = searchTexts[t].trim().toLowerCase();
+                        for (var i = 0; i < candidates.length; i++) {
+                            var el = candidates[i];
+                            var text = (el.textContent || el.innerText || el.value || '').trim().toLowerCase();
+                            if (text.indexOf(target) !== -1) return el;
+                        }
+                    }
+                    return null;
+                }
+
+                // search main doc
+                var btn = findBtn(document);
+
+                // search same-origin iframes
+                if (!btn) {
+                    var iframes = document.querySelectorAll('iframe');
+                    for (var f = 0; f < iframes.length; f++) {
+                        try {
+                            var iDoc = iframes[f].contentDocument || iframes[f].contentWindow.document;
+                            if (iDoc) { btn = findBtn(iDoc); if (btn) break; }
+                        } catch(e) {}
+                    }
+                }
+
+                if (!btn) return 'not_found';
+
+                // scroll the button's scrollable parent (the consent dialog container), NOT the page
+                var parent = btn.parentElement;
+                while (parent && parent !== document.body) {
+                    var style = window.getComputedStyle(parent);
+                    var overflowY = style.overflowY;
+                    if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && parent.scrollHeight > parent.clientHeight) {
+                        parent.scrollTop = parent.scrollHeight;
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
+
+                // scrollIntoView within its container (instant, no animation)
+                btn.scrollIntoView({behavior:'instant', block:'center'});
+
+                // store reference for phase 2
+                window.__clickTextTarget = btn;
+                var rect = btn.getBoundingClientRect();
+                return 'found:' + rect.x + ',' + rect.y + ',' + rect.width + ',' + rect.height;
+            })();
+        """.trimIndent()
+
+        val findResult = currentBrowser?.evaluateJavascript(findScript)
+        Log.d(TAG, "click_text find result: $findResult")
+
+        if (findResult == null || findResult.contains("not_found")) {
+            // Fallback to CSS selector
+            if (!step.selector.isNullOrBlank()) {
+                return currentBrowser?.click(step.selector) ?: false
+            }
+            return false
+        }
+
+        // Phase 2: Wait for scroll to complete, then click with full event simulation
+        delay(500)
+
+        val clickScript = """
+            (function() {
+                var btn = window.__clickTextTarget;
+                if (!btn) return 'no_target';
+
+                var rect = btn.getBoundingClientRect();
+                var x = rect.left + rect.width / 2;
+                var y = rect.top + rect.height / 2;
+
+                // simulate full pointer event sequence at button coordinates
+                var events = ['pointerdown','mousedown','pointerup','mouseup','click'];
+                for (var i = 0; i < events.length; i++) {
+                    var evt = new PointerEvent(events[i], {
+                        bubbles: true, cancelable: true, view: window,
+                        clientX: x, clientY: y, screenX: x, screenY: y,
+                        pointerId: 1, pointerType: 'touch', isPrimary: true
+                    });
+                    btn.dispatchEvent(evt);
+                }
+
+                // also try direct click and form submit
+                btn.click();
+                if (btn.form) try { btn.form.submit(); } catch(e) {}
+
+                // try clicking parent link/button
+                var p = btn.closest('a, button, [role="button"]');
+                if (p && p !== btn) p.click();
+
+                delete window.__clickTextTarget;
+                return 'clicked:' + (btn.textContent || '').trim().substring(0, 50);
+            })();
+        """.trimIndent()
+
+        val clickResult = currentBrowser?.evaluateJavascript(clickScript)
+        Log.d(TAG, "click_text click result: $clickResult")
+
+        return clickResult != null && clickResult.contains("clicked:")
+    }
+
+    /**
+     * Execute arbitrary JavaScript. The script goes in step.value.
+     * Return value is stored in extractedData under step.saveAs (if provided).
+     */
+    private suspend fun executeJavascript(step: Step): Boolean {
+        val script = step.value ?: return false
+        val result = currentBrowser?.evaluateJavascript(script)
+        Log.d(TAG, "javascript result: $result")
+
+        step.saveAs?.let { key ->
+            extractedData[key] = result ?: ""
+        }
+
+        return result != null && !result.contains("false") && !result.contains("error")
+    }
+
+    /**
+     * Set cookie via Android CookieManager. Works BEFORE page navigation.
+     * step.url = domain (e.g. "https://www.google.com")
+     * step.value = cookie string (e.g. "SOCS=CAESEwgD...; path=/; domain=.google.com")
+     */
+    @Suppress("BlockingMethodInNonBlockingContext")
+    private suspend fun executeSetCookie(step: Step): Boolean = withContext(Dispatchers.Main) {
+        val url = step.url ?: return@withContext false
+        val cookieValue = step.value ?: return@withContext false
+
+        try {
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+
+            for (cookie in cookieValue.split(";;")) {
+                val trimmed = cookie.trim()
+                if (trimmed.isNotEmpty()) {
+                    cookieManager.setCookie(url, trimmed)
+                    Log.d(TAG, "Cookie set for $url: ${trimmed.take(60)}...")
+                }
+            }
+            cookieManager.flush()
+            Log.i(TAG, "Cookies set successfully for $url")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set cookie: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Simulate a real finger swipe on the WebView using Android MotionEvent.
+     * Scrolls whatever is visually on screen (overlays, modals, consent dialogs).
+     * Uses step.direction for preset swipes, or step.value for custom "startX,startY,endX,endY" (0.0-1.0).
+     */
+    private suspend fun executeNativeSwipe(step: Step): Boolean {
+        val wvc = currentBrowser as? WebViewController ?: run {
+            Log.e(TAG, "native_swipe requires WebViewController")
+            return false
+        }
+
+        val direction = step.direction ?: "up"
+        val repeat = step.maxIterations ?: 1
+
+        for (i in 0 until repeat) {
+            when (direction) {
+                "up" -> wvc.nativeSwipe(0.5f, 0.75f, 0.5f, 0.25f, 400)
+                "down" -> wvc.nativeSwipe(0.5f, 0.25f, 0.5f, 0.75f, 400)
+                "left" -> wvc.nativeSwipe(0.75f, 0.5f, 0.25f, 0.5f, 400)
+                "right" -> wvc.nativeSwipe(0.25f, 0.5f, 0.75f, 0.5f, 400)
+                "custom" -> {
+                    val coords = step.value?.split(",")?.map { it.trim().toFloatOrNull() ?: 0.5f }
+                    if (coords != null && coords.size >= 4) {
+                        wvc.nativeSwipe(coords[0], coords[1], coords[2], coords[3], 400)
+                    }
+                }
+            }
+            if (i < repeat - 1) delay(200)
+        }
+        return true
+    }
+
+    /**
+     * Simulate a real finger tap on the WebView using Android MotionEvent.
+     * step.value = "x,y" as percentages (0.0-1.0), e.g. "0.5,0.85" = center-X, 85% down.
+     */
+    private suspend fun executeNativeTap(step: Step): Boolean {
+        val wvc = currentBrowser as? WebViewController ?: run {
+            Log.e(TAG, "native_tap requires WebViewController")
+            return false
+        }
+
+        val coords = step.value?.split(",")?.map { it.trim().toFloatOrNull() }
+        val x = coords?.getOrNull(0) ?: 0.5f
+        val y = coords?.getOrNull(1) ?: 0.5f
+
+        return wvc.nativeTap(x, y)
+    }
+
     private suspend fun executeWaitForElement(step: Step): Boolean {
         val selector = step.selector ?: return false
         val timeout = step.timeout ?: 10000
@@ -364,6 +597,91 @@ class ScenarioExecutor(
         }
         
         return true
+    }
+
+    /**
+     * Combined mode: runs steps, but re-executes uniqueness actions between loop iterations.
+     * For top-level loops, uniqueness actions are inserted between each iteration
+     * so the device gets a fresh fingerprint before each browsing cycle.
+     */
+    private suspend fun executeStepsWithUniquenessLoop(
+        scenario: Scenario,
+        results: MutableList<StepResult>
+    ): Boolean {
+        for (step in scenario.steps) {
+            val result = if (step.type == "loop") {
+                executeLoopWithUniqueness(step, scenario, results)
+            } else {
+                executeStep(step, scenario.config)
+            }
+
+            if (step.type == "loop") {
+                // result handled inside executeLoopWithUniqueness
+                continue
+            }
+
+            results.add(result)
+            if (!result.success && !step.optional) {
+                Log.e(TAG, "Step ${step.id} failed: ${result.error}")
+                return false
+            }
+
+            if (scenario.config.humanLike && scenario.config.randomDelays) {
+                delay(Random.nextLong(scenario.config.minDelay, scenario.config.maxDelay))
+            }
+        }
+        return true
+    }
+
+    /**
+     * Loop that re-runs uniqueness actions (fingerprint reset) between iterations.
+     */
+    private suspend fun executeLoopWithUniqueness(
+        step: Step,
+        scenario: Scenario,
+        allResults: MutableList<StepResult>
+    ): StepResult {
+        val startTime = System.currentTimeMillis()
+        val maxIterations = step.maxIterations ?: 10
+        val nestedSteps = step.steps ?: return StepResult(
+            stepId = step.id, type = step.type, success = false,
+            error = "Loop has no nested steps", duration = 0
+        )
+
+        try {
+            for (i in 0 until maxIterations) {
+                loopIndex = i
+                Log.i(TAG, "=== Loop iteration ${i + 1}/$maxIterations ===")
+
+                // Re-run uniqueness actions before each iteration (except the first — already ran in setup)
+                if (i > 0) {
+                    Log.i(TAG, "Re-running uniqueness actions for fresh fingerprint (iteration ${i + 1})")
+                    val actionsOk = executeActions(scenario.actions, scenario.config, allResults)
+                    if (!actionsOk) {
+                        Log.e(TAG, "Uniqueness actions failed at iteration ${i + 1}")
+                        break
+                    }
+                }
+
+                val iterResults = mutableListOf<StepResult>()
+                val success = executeSteps(nestedSteps, scenario.config, iterResults)
+                allResults.addAll(iterResults)
+
+                if (!success) {
+                    Log.w(TAG, "Loop iteration ${i + 1} failed, stopping loop")
+                    break
+                }
+
+                Log.i(TAG, "=== Loop iteration ${i + 1} completed ===")
+            }
+        } catch (e: LoopBreakException) {
+            Log.i(TAG, "Loop broken by condition")
+        }
+
+        return StepResult(
+            stepId = step.id, type = "loop", success = true,
+            duration = System.currentTimeMillis() - startTime
+        )
     }
 
     private suspend fun executeCondition(step: Step): Boolean {

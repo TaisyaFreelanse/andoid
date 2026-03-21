@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+layout.buildDirectory = file("C:/tmp/android-agent-build/app")
+
 android {
     namespace = "com.automation.agent"
     compileSdk = 34
@@ -11,8 +13,8 @@ android {
         applicationId = "com.automation.agent"
         minSdk = 24 // Android 7.0+
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -43,8 +45,8 @@ android {
             isDebuggable = true
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3000\"")
+            // API URL не задаём здесь: иначе все debug-сборки шли на эмулятор 10.0.2.2.
+            // Render/prod и staging берут URL из defaultConfig / flavor; только dev → localhost.
             buildConfigField("boolean", "DEBUG_MODE", "true")
         }
         
@@ -69,7 +71,9 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3000\"")
+            // Тот же облачный бэкенд, что и prod — чтобы dev-сборка на реальном телефоне работала.
+            // Локальный сервер (10.0.2.2): временно поменяй URL здесь или собери flavor staging/prod.
+            buildConfigField("String", "API_BASE_URL", "\"https://android-automation-backend.onrender.com\"")
         }
         
         create("staging") {

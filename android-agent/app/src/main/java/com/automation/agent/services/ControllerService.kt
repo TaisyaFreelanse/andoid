@@ -181,7 +181,9 @@ class ControllerService : LifecycleService() {
                 // Initialize SOCKS5 proxy manager
                 socksProxyManager = SocksProxyManager(this, rootUtils)
                 Log.i(TAG, "SocksProxyManager initialized")
-                
+
+                taskExecutor?.setSocksProxyManager(socksProxyManager!!)
+
                 // Initialize browser automation
                 browserAutomation = BrowserAutomation(this, socksProxyManager)
                 Log.i(TAG, "BrowserAutomation initialized")

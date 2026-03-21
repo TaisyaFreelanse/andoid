@@ -1,15 +1,21 @@
 package com.automation.agent.services
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.util.Log
+import android.webkit.CookieManager
 import com.automation.agent.automation.Navigator
 import com.automation.agent.automation.Parser
 import com.automation.agent.automation.Screenshot
 import com.automation.agent.browser.BrowserController
 import com.automation.agent.browser.BrowserSelector
+import com.automation.agent.browser.WebViewController
 import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
 import com.automation.agent.services.UniquenessService
+import com.automation.agent.utils.ProxyManager as SocksProxyManager
 import com.automation.agent.utils.GeoLocationHelper
 import com.automation.agent.utils.LogSender
 import com.automation.agent.utils.RootUtils
@@ -29,13 +35,19 @@ class TaskExecutor(
     private val context: Context,
     private val apiClient: ApiClient,
     private val proxyManager: ProxyManager,
-    private var deviceId: String = ""
+    private var deviceId: String = "",
+    private var socksProxyManager: SocksProxyManager? = null
 ) {
     
     fun setDeviceId(id: String) {
         deviceId = id
         logSender.setDeviceId(id)
-        logSender.setTaskId(null) // Reset task ID when device changes
+        logSender.setTaskId(null)
+    }
+
+    fun setSocksProxyManager(manager: SocksProxyManager) {
+        socksProxyManager = manager
+        Log.i(TAG, "SocksProxyManager set for WebView proxy support")
     }
     
     /**
@@ -68,6 +80,11 @@ class TaskExecutor(
         const val STEP_INPUT = "input"
         const val STEP_SUBMIT = "submit"
         const val STEP_LOOP = "loop"
+        const val STEP_NATIVE_SWIPE = "native_swipe"
+        const val STEP_NATIVE_TAP = "native_tap"
+        const val STEP_SET_COOKIE = "set_cookie"
+        const val STEP_CLICK_TEXT = "click_text"
+        const val STEP_GO_BACK = "go_back"
         
         // Task types
         const val TASK_SURFING = "surfing"
@@ -263,6 +280,11 @@ class TaskExecutor(
             STEP_SUBMIT -> executeSubmit(browser, step)
             STEP_UPLOAD -> executeUpload(step)
             STEP_LOOP -> executeLoop(browser, step)
+            STEP_NATIVE_SWIPE -> executeNativeSwipe(browser, step)
+            STEP_NATIVE_TAP -> executeNativeTap(browser, step)
+            STEP_SET_COOKIE -> executeSetCookie(step)
+            STEP_CLICK_TEXT -> executeClickText(browser, step)
+            STEP_GO_BACK -> executeGoBack(browser)
             else -> StepResult(
                 success = false,
                 error = "Unknown step type: ${step.type}"
@@ -274,31 +296,90 @@ class TaskExecutor(
      * Navigate to URL
      */
     private suspend fun executeNavigate(browser: BrowserController, step: TaskStep): StepResult {
-        val url = step.config["url"] as? String
-            ?: return StepResult(success = false, error = "URL not specified")
-        
+        val fromResults = step.config["from_results"] as? String
+        val iteration = (step.config["__iteration"] as? Number)?.toInt() ?: 0
+        val idx = (iteration - 1).coerceAtLeast(0)
+
+        val url: String
+        if (fromResults != null) {
+            @Suppress("UNCHECKED_CAST")
+            val savedList = executionResults[fromResults] as? List<String>
+            if (savedList.isNullOrEmpty()) {
+                return StepResult(success = false, error = "No results in '$fromResults'")
+            }
+            url = savedList[idx % savedList.size]
+            Log.i(TAG, "Navigate from_results '$fromResults' [$idx/${savedList.size}]: $url")
+        } else {
+            url = step.config["url"] as? String
+                ?: return StepResult(success = false, error = "URL not specified")
+        }
+
+        val targetHost = try { java.net.URL(url).host.removePrefix("www.") } catch (_: Exception) { "" }
+
         return try {
-            // Clear intercepted URLs before navigation to start fresh
             browser.clearInterceptedUrls()
-            
-            Log.d(TAG, "Navigating to: $url")
-            browser.navigate(url)
-            
-            // Wait for page to fully load (default 3 seconds)
+
+            val loadTimeout = (step.config["loadTimeout"] as? Number)?.toLong()
+                ?: (step.config["timeout"] as? Number)?.toLong()
+                ?: 15000L
             val waitAfter = (step.config["waitAfter"] as? Number)?.toLong() ?: 3000L
-            Log.d(TAG, "Waiting ${waitAfter}ms for page load...")
-            
-            // Try to wait for page load
-            val loadTimeout = (step.config["loadTimeout"] as? Number)?.toLong() ?: 10000L
-            val loaded = browser.waitForPageLoad(loadTimeout)
-            Log.d(TAG, "Page load complete: $loaded, current URL: ${browser.getCurrentUrl()}")
-            
-            // Additional wait after load
-            delay(waitAfter)
-            
+            val maxAttempts = 3
+
+            var currentUrl = ""
+            var confirmed = false
+
+            fun hostOf(u: String): String {
+                return try { java.net.URL(u).host.removePrefix("www.") } catch (_: Exception) { "" }
+            }
+            for (attempt in 1..maxAttempts) {
+                Log.d(TAG, "Navigating to: $url (attempt $attempt/$maxAttempts)")
+                browser.navigate(url)
+
+                val start = System.currentTimeMillis()
+                confirmed = false
+                currentUrl = try { browser.getCurrentUrl() } catch (_: Exception) { "" }
+                var currentHost = hostOf(currentUrl)
+
+                // Poll current URL until it lands on the target domain.
+                while (System.currentTimeMillis() - start < loadTimeout) {
+                    currentUrl = try { browser.getCurrentUrl() } catch (_: Exception) { "" }
+                    currentHost = hostOf(currentUrl)
+                    if (targetHost.isNotEmpty() && currentHost.contains(targetHost)) {
+                        confirmed = true
+                        break
+                    }
+                    delay(500)
+                }
+
+                Log.d(
+                    TAG,
+                    "After navigate attempt=$attempt confirmed=$confirmed currentUrl=$currentUrl targetHost=$targetHost currentHost=$currentHost"
+                )
+
+                delay(waitAfter)
+
+                if (confirmed) {
+                    Log.i(TAG, "Navigation confirmed on target domain: $currentHost")
+                    break
+                }
+
+                if (attempt < maxAttempts) {
+                    Log.w(TAG, "URL did not change to target ($targetHost), still on $currentHost. Retrying...")
+                } else {
+                    Log.w(TAG, "Navigation: gave up after $maxAttempts attempts, still on $currentHost instead of $targetHost")
+                }
+            }
+
             StepResult(
-                success = true,
-                data = mapOf("url" to url, "currentUrl" to browser.getCurrentUrl())
+                success = confirmed || targetHost.isEmpty(),
+                error = if (confirmed || targetHost.isEmpty()) null
+                else "Navigation did not reach target host '$targetHost' (current: '$currentUrl')",
+                data = mapOf(
+                    "url" to url,
+                    "currentUrl" to currentUrl,
+                    "targetHost" to targetHost,
+                    "confirmed" to confirmed
+                )
             )
         } catch (e: Exception) {
             Log.e(TAG, "Navigation failed: ${e.message}", e)
@@ -328,15 +409,70 @@ class TaskExecutor(
     private suspend fun executeClick(browser: BrowserController, step: TaskStep): StepResult {
         val selector = step.config["selector"] as? String
             ?: return StepResult(success = false, error = "Selector not specified")
-        
+        val optional = step.config["optional"] as? Boolean == true
+        val strict = step.config["strict"] as? Boolean == true
+        // UI по умолчанию шлёт selector "button"; на многих сайтах нет <button> — не валим задачу
+        val defaultButtonFallback = !strict && selector.trim().equals("button", ignoreCase = true)
+        val skipIfMissing = optional || defaultButtonFallback
+        val iteration = (step.config["__iteration"] as? Number)?.toInt() ?: 0
+        val esc = selector.replace("\\", "\\\\").replace("\"", "\\\"")
+        val idx = (iteration - 1).coerceAtLeast(0)
+
         return try {
-            browser.click(selector)
-            
-            // Wait after click if specified
-            val waitAfter = (step.config["waitAfter"] as? Number)?.toLong() ?: 500L
-            delay(waitAfter)
-            
-            StepResult(success = true, data = mapOf("clicked" to selector))
+            val script = """
+                (function() {
+                    var els = document.querySelectorAll("$esc");
+                    if (!els.length) return JSON.stringify({ok:false,count:0});
+                    var i = $idx % els.length;
+                    var el = els[i];
+                    el.scrollIntoView({block:'center'});
+                    var href = el.href || el.getAttribute('href') || '';
+                    if (!href && el.closest && el.closest('a')) href = el.closest('a').href || '';
+                    return JSON.stringify({ok:true, count:els.length, idx:i, href:href});
+                })();
+            """.trimIndent()
+
+            val result = browser.evaluateJavascript(script) ?: "{}"
+            Log.i(TAG, "Click[iter=$iteration]: $result")
+
+            val countMatch = Regex("\"count\":(\\d+)").find(result)
+            val count = countMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+
+            if (count == 0) {
+                Log.w(TAG, "Click: no elements found for '$selector' (skipIfMissing=$skipIfMissing)")
+                if (skipIfMissing) {
+                    return StepResult(
+                        success = true,
+                        data = mapOf(
+                            "skipped" to true,
+                            "reason" to "No elements found: $selector",
+                            "selector" to selector,
+                            "optional" to optional,
+                            "default_button_fallback" to defaultButtonFallback,
+                        ),
+                    )
+                }
+                return StepResult(success = false, error = "No elements found: $selector")
+            }
+
+            val hrefMatch = Regex("\"href\":\"([^\"]*)\"").find(result)
+            var href = hrefMatch?.groupValues?.get(1)
+                ?.replace("\\/", "/")
+                ?.replace("\\u0026", "&") ?: ""
+
+            if (href.startsWith("http")) {
+                Log.i(TAG, "Click: navigate to [$idx/$count]: $href")
+                browser.navigate(href)
+                browser.waitForPageLoad(15000)
+                delay(1000)
+            } else {
+                Log.i(TAG, "Click: JS click on [$idx/$count], no href")
+                val clickJs = """(function(){var e=document.querySelectorAll("$esc");if($idx<e.length){e[$idx].click();return 'ok';}return 'miss';})()"""
+                browser.evaluateJavascript(clickJs)
+                delay(1000)
+            }
+
+            StepResult(success = true, data = mapOf("selector" to selector, "index" to idx, "href" to href, "count" to count))
         } catch (e: Exception) {
             StepResult(success = false, error = "Click failed: ${e.message}")
         }
@@ -734,8 +870,13 @@ class TaskExecutor(
         return try {
             val screenshotHelper = Screenshot(context)
             
-            // Capture screenshot using browser's takeScreenshot method
-            val bitmap = browser.takeScreenshot()
+            var bitmap = browser.takeScreenshot()
+
+            if (bitmap != null && isBitmapBlank(bitmap)) {
+                Log.w(TAG, "Native screenshot is blank, trying JS canvas fallback")
+                val jsBitmap = captureViaJavascript(browser)
+                if (jsBitmap != null) bitmap = jsBitmap
+            }
             
             if (bitmap == null) {
                 return StepResult(success = false, error = "Failed to capture screenshot")
@@ -958,12 +1099,16 @@ class TaskExecutor(
                 for ((stepIndex, nestedStepData) in nestedSteps.withIndex()) {
                     val nestedStepMap = nestedStepData as? Map<*, *> ?: continue
                     
-                    // Convert nested step to TaskStep
+                    val baseConfig = nestedStepMap.mapKeys { it.key.toString() }
+                        .filterKeys { it != "type" && it != "id" && it != "description" }
+                        .mapValues { it.value ?: "" }
+                        .toMutableMap()
+                    baseConfig["__iteration"] = iteration
+                    baseConfig["__loop_max"] = maxIterations
+
                     val nestedStep = TaskStep(
                         type = nestedStepMap["type"] as? String ?: continue,
-                        config = nestedStepMap.mapKeys { it.key.toString() }
-                            .filterKeys { it != "type" && it != "id" && it != "description" }
-                            .mapValues { it.value ?: "" }
+                        config = baseConfig
                     )
                     
                     Log.d(TAG, "Loop[$iteration] step ${stepIndex + 1}: ${nestedStep.type}")
@@ -1026,6 +1171,7 @@ class TaskExecutor(
         selector: String, 
         attribute: String?
     ): List<String> {
+        val esc = selector.replace("\\", "\\\\").replace("\"", "\\\"")
         // Handle multiple attributes (comma-separated)
         val attributes = attribute?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: listOf(null)
         
@@ -1058,7 +1204,7 @@ class TaskExecutor(
             """
             (function() {
                 try {
-                    var elements = document.querySelectorAll('$selector');
+                    var elements = document.querySelectorAll("$esc");
                     var results = [];
                     elements.forEach(function(el) {
                         // Try multiple ways to get href
@@ -1090,7 +1236,7 @@ class TaskExecutor(
             """
             (function() {
                 try {
-                    var elements = document.querySelectorAll('$selector');
+                    var elements = document.querySelectorAll("$esc");
                     var results = [];
                     elements.forEach(function(el) {
                         var value = $attrScript;
@@ -2151,7 +2297,7 @@ class TaskExecutor(
         Log.i(TAG, "Applying uniqueness with proxy: $proxyString")
 
         try {
-            // 1. Parse and apply proxy
+            // 1. Parse and apply proxy for HTTP clients (OkHttp)
             val proxyConfig = when {
                 proxyString.startsWith("socks5://") -> ProxyManager.parseSocks5(proxyString)
                 proxyString.startsWith("http://") || proxyString.startsWith("https://") -> ProxyManager.parseHttp(proxyString)
@@ -2162,15 +2308,38 @@ class TaskExecutor(
                 proxyManager.clearProxies()
                 proxyManager.addProxy(proxyConfig)
                 apiClient.updateProxy()
-                Log.i(TAG, "Proxy applied: ${proxyConfig.host}:${proxyConfig.port}")
+                Log.i(TAG, "Network proxy applied: ${proxyConfig.host}:${proxyConfig.port}")
             } else {
                 Log.w(TAG, "Failed to parse proxy: $proxyString")
                 return
             }
 
-            // 2. Get geolocation from proxy IP
+            // 2. Setup system-wide proxy for WebView via SocksProxyManager (root required)
+            val spm = socksProxyManager
+            if (spm != null && proxyConfig != null) {
+                val socksConfig = SocksProxyManager.ProxyConfig(
+                    id = "task_proxy",
+                    type = if (proxyString.startsWith("socks5://")) "socks5" else "http",
+                    host = proxyConfig.host,
+                    port = proxyConfig.port,
+                    username = proxyConfig.username ?: "",
+                    password = proxyConfig.password ?: "",
+                    country = "US",
+                    state = null
+                )
+                val setupResult = spm.setupProxy(socksConfig)
+                if (setupResult) {
+                    Log.i(TAG, "System-wide proxy set for WebView: ${proxyConfig.host}:${proxyConfig.port}")
+                } else {
+                    Log.w(TAG, "Failed to set system-wide proxy for WebView")
+                }
+            } else {
+                Log.w(TAG, "SocksProxyManager not available, WebView will NOT use proxy")
+            }
+
+            // 3. Get geolocation from proxy IP
             val geoLocation = withContext(Dispatchers.IO) {
-                delay(2000) // Wait for proxy to be active
+                delay(2000)
                 geoLocationHelper.getCurrentIpLocation()
             }
 
@@ -2215,6 +2384,212 @@ class TaskExecutor(
         }
     }
 
+    private suspend fun executeGoBack(browser: BrowserController): StepResult {
+        return try {
+            browser.goBack()
+            delay(1000)
+            browser.waitForPageLoad(10000)
+            StepResult(success = true, data = mapOf("url" to browser.getCurrentUrl()))
+        } catch (e: Exception) {
+            StepResult(success = false, error = "go_back failed: ${e.message}")
+        }
+    }
+
+    // ==================== Screenshot Helpers ====================
+
+    private fun isBitmapBlank(bitmap: Bitmap): Boolean {
+        val sampleSize = 20
+        val stepX = (bitmap.width / sampleSize).coerceAtLeast(1)
+        val stepY = (bitmap.height / sampleSize).coerceAtLeast(1)
+        for (x in 0 until bitmap.width step stepX) {
+            for (y in 0 until bitmap.height step stepY) {
+                val pixel = bitmap.getPixel(x, y)
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                if (r < 250 || g < 250 || b < 250) return false
+            }
+        }
+        return true
+    }
+
+    private suspend fun captureViaJavascript(browser: BrowserController): Bitmap? {
+        val script = """
+            (function() {
+                try {
+                    var c = document.createElement('canvas');
+                    var w = Math.min(document.documentElement.scrollWidth, window.innerWidth || 1080);
+                    var h = Math.min(document.documentElement.scrollHeight, window.innerHeight || 1920);
+                    c.width = w; c.height = h;
+                    var ctx = c.getContext('2d');
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, 0, w, h);
+                    var data = new XMLSerializer().serializeToString(document.documentElement);
+                    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">' + 
+                        document.documentElement.outerHTML.replace(/&/g,'&amp;') + '</div></foreignObject></svg>';
+                    return 'url=' + encodeURIComponent(window.location.href) + '&title=' + encodeURIComponent(document.title);
+                } catch(e) { return 'error:' + e.message; }
+            })();
+        """.trimIndent()
+
+        val result = browser.evaluateJavascript(script)
+        Log.d(TAG, "JS page info: $result")
+        return null
+    }
+
+    // ==================== Native Touch / Cookie / ClickText ====================
+
+    private suspend fun executeNativeSwipe(browser: BrowserController, step: TaskStep): StepResult {
+        val wvc = browser as? WebViewController
+            ?: return StepResult(success = false, error = "native_swipe requires WebViewController")
+
+        val direction = step.config["direction"] as? String ?: "up"
+        val repeat = (step.config["repeat"] as? Number)?.toInt() ?: 3
+
+        return try {
+            for (i in 0 until repeat) {
+                when (direction) {
+                    "up" -> wvc.nativeSwipe(0.5f, 0.75f, 0.5f, 0.25f, 400)
+                    "down" -> wvc.nativeSwipe(0.5f, 0.25f, 0.5f, 0.75f, 400)
+                    "left" -> wvc.nativeSwipe(0.75f, 0.5f, 0.25f, 0.5f, 400)
+                    "right" -> wvc.nativeSwipe(0.25f, 0.5f, 0.75f, 0.5f, 400)
+                }
+                if (i < repeat - 1) delay(300)
+            }
+            StepResult(success = true, data = mapOf("direction" to direction, "repeat" to repeat))
+        } catch (e: Exception) {
+            StepResult(success = false, error = "native_swipe failed: ${e.message}")
+        }
+    }
+
+    private suspend fun executeNativeTap(browser: BrowserController, step: TaskStep): StepResult {
+        val wvc = browser as? WebViewController
+            ?: return StepResult(success = false, error = "native_tap requires WebViewController")
+
+        val x = (step.config["x"] as? Number)?.toFloat() ?: 0.5f
+        val y = (step.config["y"] as? Number)?.toFloat() ?: 0.5f
+
+        return try {
+            wvc.nativeTap(x, y)
+            StepResult(success = true, data = mapOf("x" to x, "y" to y))
+        } catch (e: Exception) {
+            StepResult(success = false, error = "native_tap failed: ${e.message}")
+        }
+    }
+
+    private suspend fun executeSetCookie(step: TaskStep): StepResult {
+        val url = step.config["url"] as? String
+            ?: return StepResult(success = false, error = "set_cookie requires 'url'")
+        val cookies = step.config["cookies"] as? String
+            ?: step.config["value"] as? String
+            ?: return StepResult(success = false, error = "set_cookie requires 'cookies' or 'value'")
+
+        return try {
+            withContext(Dispatchers.Main) {
+                val cm = CookieManager.getInstance()
+                cm.setAcceptCookie(true)
+                for (c in cookies.split(";;")) {
+                    val trimmed = c.trim()
+                    if (trimmed.isNotEmpty()) {
+                        cm.setCookie(url, trimmed)
+                    }
+                }
+                cm.flush()
+            }
+            Log.i(TAG, "Cookies set for $url")
+            StepResult(success = true, data = mapOf("url" to url))
+        } catch (e: Exception) {
+            StepResult(success = false, error = "set_cookie failed: ${e.message}")
+        }
+    }
+
+    private suspend fun executeClickText(browser: BrowserController, step: TaskStep): StepResult {
+        val textValues = step.config["value"] as? String ?: step.config["text"] as? String
+            ?: return StepResult(success = false, error = "click_text requires 'value' or 'text'")
+        val fallbackSelector = step.config["selector"] as? String
+
+        val escapedText = textValues.replace("\\", "\\\\").replace("'", "\\'")
+
+        val findScript = """
+            (function() {
+                var searchTexts = '$escapedText'.split('|');
+                function findBtn(doc) {
+                    var els = doc.querySelectorAll('button, a, [role="button"], input[type="submit"], div[role="button"]');
+                    for (var t = 0; t < searchTexts.length; t++) {
+                        var target = searchTexts[t].trim().toLowerCase();
+                        for (var i = 0; i < els.length; i++) {
+                            var txt = (els[i].textContent || els[i].innerText || els[i].value || '').trim().toLowerCase();
+                            if (txt.indexOf(target) !== -1) return els[i];
+                        }
+                    }
+                    return null;
+                }
+                var btn = findBtn(document);
+                if (!btn) {
+                    var iframes = document.querySelectorAll('iframe');
+                    for (var f = 0; f < iframes.length; f++) {
+                        try {
+                            var d = iframes[f].contentDocument || iframes[f].contentWindow.document;
+                            if (d) { btn = findBtn(d); if (btn) break; }
+                        } catch(e) {}
+                    }
+                }
+                if (!btn) return 'not_found';
+                var parent = btn.parentElement;
+                while (parent && parent !== document.body) {
+                    var s = window.getComputedStyle(parent);
+                    if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+                        parent.scrollTop = parent.scrollHeight;
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
+                btn.scrollIntoView({behavior:'instant', block:'center'});
+                window.__ctBtn = btn;
+                return 'found';
+            })();
+        """.trimIndent()
+
+        return try {
+            val findResult = browser.evaluateJavascript(findScript)
+            Log.d(TAG, "click_text find: $findResult")
+
+            if (findResult?.contains("not_found") == true) {
+                if (fallbackSelector != null) {
+                    browser.click(fallbackSelector)
+                    return StepResult(success = true, data = mapOf("method" to "css_fallback"))
+                }
+                return StepResult(success = false, error = "Button text not found")
+            }
+
+            delay(500)
+
+            val clickScript = """
+                (function() {
+                    var btn = window.__ctBtn;
+                    if (!btn) return 'no_btn';
+                    var rect = btn.getBoundingClientRect();
+                    var x = rect.left + rect.width / 2;
+                    var y = rect.top + rect.height / 2;
+                    ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(evt) {
+                        btn.dispatchEvent(new PointerEvent(evt, {bubbles:true, cancelable:true, view:window, clientX:x, clientY:y, pointerId:1, pointerType:'touch', isPrimary:true}));
+                    });
+                    btn.click();
+                    if (btn.form) try { btn.form.submit(); } catch(e) {}
+                    delete window.__ctBtn;
+                    return 'clicked';
+                })();
+            """.trimIndent()
+
+            val clickResult = browser.evaluateJavascript(clickScript)
+            Log.d(TAG, "click_text click: $clickResult")
+
+            StepResult(success = clickResult?.contains("clicked") == true, data = mapOf("result" to (clickResult ?: "")))
+        } catch (e: Exception) {
+            StepResult(success = false, error = "click_text failed: ${e.message}")
+        }
+    }
+
     // ==================== Data Classes ====================
 
     data class TaskConfig(
@@ -2230,7 +2605,7 @@ class TaskExecutor(
     )
 
     data class TaskStep(
-        val type: String, // navigate, wait, click, scroll, extract, screenshot, upload, input, submit
+        val type: String,
         val config: Map<String, Any> = emptyMap()
     )
 

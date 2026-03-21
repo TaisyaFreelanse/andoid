@@ -217,12 +217,25 @@ class ScenarioParser(private val context: Context) {
                     warnings.add("Step $stepId: wait should have positive 'duration'")
                 }
             }
-            "click", "input", "extract" -> {
+            "click", "extract" -> {
                 if (step.selector.isNullOrBlank()) {
                     errors.add("Step $stepId: ${step.type} requires 'selector'")
                 }
             }
+            "click_text" -> {
+                if (step.value.isNullOrBlank() && step.selector.isNullOrBlank()) {
+                    errors.add("Step $stepId: click_text requires 'value' (text to match) or 'selector'")
+                }
+            }
+            "javascript" -> {
+                if (step.value.isNullOrBlank()) {
+                    errors.add("Step $stepId: javascript requires 'value' (script to execute)")
+                }
+            }
             "input" -> {
+                if (step.selector.isNullOrBlank()) {
+                    errors.add("Step $stepId: input requires 'selector'")
+                }
                 if (step.value.isNullOrBlank()) {
                     warnings.add("Step $stepId: input should have 'value'")
                 }

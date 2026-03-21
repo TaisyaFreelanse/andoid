@@ -124,10 +124,10 @@ const SIMPLE_PARSE_TEMPLATE: ActionBlock[] = [
   { id: uid(), type: 'screenshot', saveName: 'page_result' },
 ];
 
-/** Открыть api.ipify.org, извлечь IP в JSON + скрин. IP будет в результате задачи (ip_address), скрин — бэкап. */
+/** Открыть api.ipify.org?format=json, извлечь JSON (pre/body) в ip_address. Ответ {"ip":"x.x.x.x"}. */
 const PROXY_IP_CHECK_TEMPLATE: ActionBlock[] = [
-  { id: uid(), type: 'navigate', url: 'https://api.ipify.org' },
-  { id: uid(), type: 'wait', duration: 2 },
+  { id: uid(), type: 'navigate', url: 'https://api.ipify.org?format=json' },
+  { id: uid(), type: 'wait', duration: 3 },
   { id: uid(), type: 'extract', selector: 'body', attribute: 'innerText', saveName: 'ip_address' },
   { id: uid(), type: 'screenshot', saveName: 'ip_check' },
 ];
@@ -706,7 +706,7 @@ export default function TaskForm({ onSuccess, onCancel }: TaskFormProps) {
           <div className="card-title proxy-verify-title">Проверка прокси — внешний IP</div>
           <p className="proxy-verify-text">
             Впиши прокси в блоке «Цель» ниже (или оставь пустым). Нажми кнопку — подставятся шаги:{' '}
-            <strong>api.ipify.org</strong> + извлечение IP в <code>ip_address</code> + скрин. В результате задачи IP будет в JSON (не только на скрине). Два запуска (с прокси и без) — сравни значения <code>ip_address</code>.
+            <strong>api.ipify.org?format=json</strong> + извлечение в <code>ip_address</code> (JSON с полем ip) + скрин. Два запуска — сравни <code>ip_address</code>.
           </p>
           <button type="button" className="proxy-ip-check-btn proxy-ip-check-btn-large" onClick={applyIpCheckTemplate}>
             Собрать сценарий проверки IP

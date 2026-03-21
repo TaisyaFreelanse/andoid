@@ -9,7 +9,10 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.os.SystemClock
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.webkit.*
 import com.automation.agent.network.ProxyManager
@@ -51,6 +54,8 @@ class WebViewController(
     private var currentUrl: String = ""
     private var pageTitle: String = ""
     private var customUserAgent: String? = null
+
+    private fun escJs(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
     private var windowManager: WindowManager? = null
     private var isAddedToWindow = false
     
@@ -64,6 +69,10 @@ class WebViewController(
         if (isInitialized.get()) return
         
         withContext(Dispatchers.Main) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                WebView.enableSlowWholeDocumentDraw()
+            }
+
             webView = WebView(context).apply {
                 setupWebView(this)
             }
@@ -735,10 +744,11 @@ class WebViewController(
 
     override suspend fun click(selector: String): Boolean {
         ensureInitialized()
-        
+
+        val esc = selector.replace("\\", "\\\\").replace("\"", "\\\"")
         val script = """
             (function() {
-                var element = document.querySelector('$selector');
+                var element = document.querySelector("$esc");
                 if (element) {
                     element.click();
                     return true;
@@ -746,7 +756,7 @@ class WebViewController(
                 return false;
             })();
         """.trimIndent()
-        
+
         val result = evaluateJavascript(script)
         Log.d(TAG, "Click result for '$selector': $result")
         return result?.contains("true") == true
@@ -853,9 +863,10 @@ class WebViewController(
         ensureInitialized()
         
         val script = if (selector != null) {
+            val esc2 = selector.replace("\\", "\\\\").replace("\"", "\\\"")
             """
                 (function() {
-                    var element = document.querySelector('$selector');
+                    var element = document.querySelector("$esc2");
                     if (element) {
                         if (element.tagName === 'FORM') {
                             element.submit();
@@ -889,7 +900,7 @@ class WebViewController(
         
         val script = """
             (function() {
-                var element = document.querySelector('$selector');
+                var element = document.querySelector("${escJs(selector)}");
                 if (element) {
                     element.focus();
                     return true;
@@ -907,7 +918,7 @@ class WebViewController(
         
         val script = """
             (function() {
-                var element = document.querySelector('$selector');
+                var element = document.querySelector("${escJs(selector)}");
                 if (element) {
                     element.value = '';
                     element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -924,7 +935,13 @@ class WebViewController(
     // ==================== Data Extraction ====================
 
     override suspend fun getCurrentUrl(): String {
-        return currentUrl
+        // Use live JS location so we don't rely on potentially stale `currentUrl` state.
+        // This is important for SPA/redirects where `onPageFinished` may lag.
+        return try {
+            evaluateJavascript("window.location.href;") ?: currentUrl
+        } catch (_: Exception) {
+            currentUrl
+        }
     }
 
     override suspend fun getTitle(): String {
@@ -959,7 +976,7 @@ class WebViewController(
     }
 
     override suspend fun elementExists(selector: String): Boolean {
-        val script = "document.querySelector('$selector') !== null;"
+        val script = """document.querySelector("${escJs(selector)}") !== null;"""
         val result = evaluateJavascript(script)
         return result == "true"
     }
@@ -967,7 +984,7 @@ class WebViewController(
     override suspend fun getElementText(selector: String): String? {
         val script = """
             (function() {
-                var element = document.querySelector('$selector');
+                var element = document.querySelector("${escJs(selector)}");
                 return element ? element.textContent : null;
             })();
         """.trimIndent()
@@ -977,10 +994,11 @@ class WebViewController(
     }
 
     override suspend fun getElementAttribute(selector: String, attribute: String): String? {
+        val escAttr = escJs(attribute)
         val script = """
             (function() {
-                var element = document.querySelector('$selector');
-                return element ? element.getAttribute('$attribute') : null;
+                var element = document.querySelector("${escJs(selector)}");
+                return element ? element.getAttribute("$escAttr") : null;
             })();
         """.trimIndent()
         
@@ -1044,20 +1062,51 @@ class WebViewController(
 
     override suspend fun takeScreenshot(): Bitmap? {
         ensureInitialized()
-        
+
         return withContext(Dispatchers.Main) {
             webView?.let { view ->
                 try {
-                    val bitmap = Bitmap.createBitmap(
-                        view.width,
-                        view.height,
-                        Bitmap.Config.ARGB_8888
-                    )
+                    val dm = context.resources.displayMetrics
+                    var w = view.width
+                    var h = view.height
+
+                    if (w <= 0 || h <= 0) {
+                        w = dm.widthPixels
+                        h = dm.heightPixels
+                        Log.w(TAG, "WebView has zero dimensions, using screen: ${w}x${h}")
+                        view.measure(
+                            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY)
+                        )
+                        view.layout(0, 0, w, h)
+                    }
+
+                    Log.d(TAG, "Taking screenshot ${w}x${h}, contentHeight=${view.contentHeight}, isAddedToWindow=$isAddedToWindow")
+
+                    view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                    view.isDrawingCacheEnabled = true
+                    view.buildDrawingCache(true)
+
+                    val cacheBitmap = view.drawingCache
+                    if (cacheBitmap != null && cacheBitmap.width > 0 && cacheBitmap.height > 0) {
+                        val result = Bitmap.createBitmap(cacheBitmap)
+                        view.isDrawingCacheEnabled = false
+                        view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        Log.d(TAG, "Screenshot via drawingCache: ${result.width}x${result.height}")
+                        return@withContext result
+                    }
+
+                    view.isDrawingCacheEnabled = false
+
+                    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(bitmap)
                     view.draw(canvas)
+                    view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
+                    Log.d(TAG, "Screenshot via draw(canvas): ${bitmap.width}x${bitmap.height}")
                     bitmap
                 } catch (e: Exception) {
-                    Log.e(TAG, "Screenshot failed: ${e.message}")
+                    Log.e(TAG, "Screenshot failed: ${e.message}", e)
                     null
                 }
             }
@@ -1066,26 +1115,38 @@ class WebViewController(
 
     override suspend fun takeFullPageScreenshot(): Bitmap? {
         ensureInitialized()
-        
+
         return withContext(Dispatchers.Main) {
             webView?.let { view ->
                 try {
-                    // Get full page dimensions
+                    val dm = context.resources.displayMetrics
+                    var w = view.width
+                    if (w <= 0) w = dm.widthPixels
+
                     val contentHeight = view.contentHeight
+                    @Suppress("DEPRECATION")
                     val scale = view.scale
                     val fullHeight = (contentHeight * scale).toInt()
-                    
-                    if (fullHeight <= 0 || view.width <= 0) {
+
+                    if (fullHeight <= 0) {
                         return@withContext takeScreenshot()
                     }
-                    
-                    val bitmap = Bitmap.createBitmap(
-                        view.width,
-                        fullHeight.coerceAtMost(10000), // Limit max height
-                        Bitmap.Config.ARGB_8888
+
+                    val targetH = fullHeight.coerceAtMost(10000)
+
+                    view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                    view.measure(
+                        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(targetH, View.MeasureSpec.EXACTLY)
                     )
+                    view.layout(0, 0, w, targetH)
+
+                    val bitmap = Bitmap.createBitmap(w, targetH, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(bitmap)
                     view.draw(canvas)
+
+                    view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
                     bitmap
                 } catch (e: Exception) {
                     Log.e(TAG, "Full page screenshot failed: ${e.message}")
@@ -1201,5 +1262,83 @@ class WebViewController(
         withContext(Dispatchers.Main) {
             webView?.clearHistory()
         }
+    }
+
+    /**
+     * Simulate a real finger swipe on the WebView using MotionEvent.
+     * Scrolls whatever is visually on top (overlays, modals, consent dialogs).
+     * @param startXPercent start X position as % of WebView width (0.0-1.0)
+     * @param startYPercent start Y position as % of WebView height (0.0-1.0)
+     * @param endXPercent end X position as % of WebView width (0.0-1.0)
+     * @param endYPercent end Y position as % of WebView height (0.0-1.0)
+     * @param durationMs swipe duration in ms
+     */
+    suspend fun nativeSwipe(
+        startXPercent: Float, startYPercent: Float,
+        endXPercent: Float, endYPercent: Float,
+        durationMs: Long = 300
+    ): Boolean = withContext(Dispatchers.Main) {
+        val wv = webView ?: return@withContext false
+
+        val w = wv.width.toFloat()
+        val h = wv.height.toFloat()
+        val startX = w * startXPercent
+        val startY = h * startYPercent
+        val endX = w * endXPercent
+        val endY = h * endYPercent
+
+        val downTime = SystemClock.uptimeMillis()
+        val steps = 10
+        val stepDelay = durationMs / steps
+
+        val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, startX, startY, 0)
+        wv.dispatchTouchEvent(down)
+        down.recycle()
+
+        for (i in 1..steps) {
+            val fraction = i.toFloat() / steps
+            val curX = startX + (endX - startX) * fraction
+            val curY = startY + (endY - startY) * fraction
+            val moveTime = downTime + stepDelay * i
+            val move = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, curX, curY, 0)
+            wv.dispatchTouchEvent(move)
+            move.recycle()
+            delay(stepDelay)
+        }
+
+        val upTime = SystemClock.uptimeMillis()
+        val up = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, endX, endY, 0)
+        wv.dispatchTouchEvent(up)
+        up.recycle()
+
+        Log.d(TAG, "nativeSwipe: (${startX},${startY}) -> (${endX},${endY}) in ${durationMs}ms")
+        true
+    }
+
+    /**
+     * Simulate a real finger tap on the WebView at given position.
+     * @param xPercent X position as % of WebView width (0.0-1.0)
+     * @param yPercent Y position as % of WebView height (0.0-1.0)
+     */
+    suspend fun nativeTap(xPercent: Float, yPercent: Float): Boolean = withContext(Dispatchers.Main) {
+        val wv = webView ?: return@withContext false
+
+        val x = wv.width * xPercent
+        val y = wv.height * yPercent
+
+        val downTime = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+        wv.dispatchTouchEvent(down)
+        down.recycle()
+
+        delay(80)
+
+        val upTime = SystemClock.uptimeMillis()
+        val up = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, x, y, 0)
+        wv.dispatchTouchEvent(up)
+        up.recycle()
+
+        Log.d(TAG, "nativeTap at (${x}, ${y})")
+        true
     }
 }
