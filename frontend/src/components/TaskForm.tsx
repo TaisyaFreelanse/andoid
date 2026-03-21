@@ -108,6 +108,7 @@ const GOOGLE_ADS_TEMPLATE: ActionBlock[] = [
       { id: uid(), type: 'scroll', direction: 'down', pixels: 600 },
       { id: uid(), type: 'wait', duration: 2.5 },
       { id: uid(), type: 'screenshot', saveName: 'ad_mid' },
+      { id: uid(), type: 'extract', selector: '{{ad_links}}', attribute: 'href', saveName: 'ad_links' },
       { id: uid(), type: 'scroll', direction: 'down', pixels: 800 },
       { id: uid(), type: 'wait', duration: 2 },
       { id: uid(), type: 'screenshot', saveName: 'ad_bottom' },
@@ -123,92 +124,114 @@ const SIMPLE_PARSE_TEMPLATE: ActionBlock[] = [
   { id: uid(), type: 'screenshot', saveName: 'page_result' },
 ];
 
-function actionsToSteps(actions: ActionBlock[], domain: string): any[] {
+function cleanDomain(raw: string): string {
+  return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+}
+
+const AD_SELECTORS = "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], iframe[src*='googleads'], iframe[src*='doubleclick']";
+
+function actionsToSteps(actions: ActionBlock[], rawDomain: string): any[] {
+  const domain = cleanDomain(rawDomain);
   const steps: any[] = [];
   let stepIdx = 1;
 
   for (const action of actions) {
-    const stepId = `step_${stepIdx}`;
     switch (action.type) {
       case 'navigate':
         if (action.url === '{{google_search}}') {
           steps.push({
-            id: 'step_consent_cookie', type: 'set_cookie',
+            id: `step_${stepIdx++}`, type: 'set_cookie',
             url: 'https://www.google.com',
             value: 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjQwMzEzLjA3X3AxGgJlbiADGgYIgI6tsgY; path=/; domain=.google.com; max-age=31536000; secure;;CONSENT=YES+eur.20240101-0; path=/; domain=.google.com; max-age=31536000',
             optional: true,
           });
           steps.push({
-            id: stepId, type: 'navigate',
+            id: `step_${stepIdx++}`, type: 'navigate',
             url: `https://www.google.com/search?q=site%3A${domain}&ie=UTF-8`,
             wait_for_load: true, timeout: 30000,
           });
+          steps.push({
+            id: `step_${stepIdx++}`, type: 'wait',
+            duration: 3000, random_offset: 1000,
+          });
+          steps.push({
+            id: `step_${stepIdx++}`, type: 'native_tap',
+            value: '0.5,0.82', optional: true,
+          });
+          steps.push({
+            id: `step_${stepIdx++}`, type: 'wait',
+            duration: 2000,
+          });
         } else if (action.url === '{{from_results}}') {
           steps.push({
-            id: stepId, type: 'navigate',
+            id: `step_${stepIdx++}`, type: 'navigate',
             from_results: 'site_links',
             loadTimeout: 20000, waitAfter: 5000,
           });
         } else {
           steps.push({
-            id: stepId, type: 'navigate',
+            id: `step_${stepIdx++}`, type: 'navigate',
             url: action.url || `https://${domain}`,
             wait_for_load: true, timeout: 30000,
           });
         }
-        break;
+        continue;
       case 'wait':
         steps.push({
-          id: stepId, type: 'wait',
+          id: `step_${stepIdx}`, type: 'wait',
           duration: (action.duration || 3) * 1000,
           random_offset: Math.round((action.duration || 3) * 300),
         });
         break;
       case 'scroll':
         steps.push({
-          id: stepId, type: 'scroll',
+          id: `step_${stepIdx}`, type: 'scroll',
           direction: action.direction || 'down',
           pixels: action.pixels || 500,
           smooth: true,
         });
         break;
       case 'extract':
-        steps.push({
-          id: stepId, type: 'extract',
-          selector: action.selector === '{{domain_links}}'
-            ? `a[href*='${domain}']`
-            : (action.selector || 'a'),
-          attribute: action.attribute || 'href',
-          save_as: action.saveName || 'data',
-          multiple: true,
-        });
+        if (action.selector === '{{domain_links}}') {
+          steps.push({
+            id: `step_${stepIdx}`, type: 'extract',
+            selector: `a[href*='${domain}']`,
+            attribute: 'href', save_as: 'site_links', multiple: true,
+          });
+        } else if (action.selector === '{{ad_links}}') {
+          steps.push({
+            id: `step_${stepIdx}`, type: 'extract',
+            selector: AD_SELECTORS,
+            attribute: 'href', save_as: 'ad_links', multiple: true, optional: true,
+          });
+        } else {
+          steps.push({
+            id: `step_${stepIdx}`, type: 'extract',
+            selector: action.selector || 'a',
+            attribute: action.attribute || 'href',
+            save_as: action.saveName || 'data',
+            multiple: true,
+          });
+        }
         break;
       case 'screenshot':
         steps.push({
-          id: stepId, type: 'screenshot',
+          id: `step_${stepIdx}`, type: 'screenshot',
           save_as: action.saveName || `screenshot_${stepIdx}`,
         });
         break;
       case 'click':
         if (action.text) {
-          steps.push({
-            id: stepId, type: 'click_text',
-            value: action.text,
-          });
+          steps.push({ id: `step_${stepIdx}`, type: 'click_text', value: action.text });
         } else {
-          steps.push({
-            id: stepId, type: 'click',
-            selector: action.selector || 'button',
-          });
+          steps.push({ id: `step_${stepIdx}`, type: 'click', selector: action.selector || 'button' });
         }
         break;
       case 'loop':
         steps.push({
-          id: stepId, type: 'loop',
+          id: `step_${stepIdx}`, type: 'loop',
           max_iterations: action.loopCount || 3,
-          steps: action.loopActions
-            ? actionsToSteps(action.loopActions, domain)
-            : [],
+          steps: action.loopActions ? actionsToSteps(action.loopActions, rawDomain) : [],
         });
         break;
     }
@@ -218,9 +241,10 @@ function actionsToSteps(actions: ActionBlock[], domain: string): any[] {
 }
 
 function buildScenarioJson(fields: FormFields): object {
+  const domain = cleanDomain(fields.targetDomain);
   return {
     id: `task_${Date.now()}`,
-    name: fields.name,
+    name: fields.name || `Задача ${domain}`,
     type: 'automation',
     browser: 'webview',
     proxy: fields.proxy || '',
@@ -238,7 +262,7 @@ function buildScenarioJson(fields: FormFields): object {
       auto_detect_country: true,
     },
     variables: {
-      target_domain: fields.targetDomain,
+      target_domain: domain,
       country_code: fields.countryCode,
       proxy_url: fields.proxy || '',
       loop_count: String(fields.loopCount),
@@ -288,11 +312,12 @@ function ActionBlockCard({
       </div>
       <div className="action-card-body">
         {action.type === 'navigate' && (
-          <input
-            type="text" placeholder="https://example.com"
-            value={action.url || ''} onChange={e => onChange({ ...action, url: e.target.value })}
-            disabled={action.url === '{{google_search}}' || action.url === '{{from_results}}'}
-          />
+          action.url === '{{google_search}}'
+            ? <div className="template-hint">Google: поиск по домену (site:...)</div>
+            : action.url === '{{from_results}}'
+              ? <div className="template-hint">Перейти на сайт из результатов поиска</div>
+              : <input type="text" placeholder="https://example.com"
+                  value={action.url || ''} onChange={e => onChange({ ...action, url: e.target.value })} />
         )}
         {action.type === 'wait' && (
           <div className="inline-field">
@@ -316,20 +341,23 @@ function ActionBlockCard({
           </div>
         )}
         {action.type === 'extract' && (
-          <>
-            <input type="text" placeholder="CSS-селектор (a, div.class, ...)"
-              value={action.selector || ''}
-              onChange={e => onChange({ ...action, selector: e.target.value })}
-              disabled={action.selector === '{{domain_links}}'} />
-            <div className="inline-fields">
-              <input type="text" placeholder="Атрибут (href, src, text)"
-                value={action.attribute || 'href'}
-                onChange={e => onChange({ ...action, attribute: e.target.value })} />
-              <input type="text" placeholder="Сохранить как"
-                value={action.saveName || ''}
-                onChange={e => onChange({ ...action, saveName: e.target.value })} />
-            </div>
-          </>
+          action.selector === '{{domain_links}}'
+            ? <div className="template-hint">Извлечь ссылки на целевой домен</div>
+            : action.selector === '{{ad_links}}'
+              ? <div className="template-hint">Извлечь рекламные ссылки (AdSense, DoubleClick)</div>
+              : <>
+                  <input type="text" placeholder="CSS-селектор (a, div.class, ...)"
+                    value={action.selector || ''}
+                    onChange={e => onChange({ ...action, selector: e.target.value })} />
+                  <div className="inline-fields">
+                    <input type="text" placeholder="Атрибут (href, src, text)"
+                      value={action.attribute || 'href'}
+                      onChange={e => onChange({ ...action, attribute: e.target.value })} />
+                    <input type="text" placeholder="Сохранить как"
+                      value={action.saveName || ''}
+                      onChange={e => onChange({ ...action, saveName: e.target.value })} />
+                  </div>
+                </>
         )}
         {action.type === 'screenshot' && (
           <input type="text" placeholder="Имя скриншота"

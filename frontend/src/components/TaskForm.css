@@ -297,6 +297,16 @@
   cursor: not-allowed;
 }
 
+.template-hint {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  padding: 0.45rem 0.75rem;
+  background: rgba(115, 255, 184, 0.04);
+  border: 1px solid rgba(115, 255, 184, 0.1);
+  border-radius: 10px;
+  font-style: italic;
+}
+
 .action-card-body select option {
   background: #1a1a1a;
   color: #fff;
