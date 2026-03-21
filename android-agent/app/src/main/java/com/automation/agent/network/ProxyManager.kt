@@ -33,19 +33,22 @@ class ProxyManager {
 
         /**
          * Parse SOCKS5 proxy string.
-         * Supports: socks5://host:port | socks5://user:pass@host:port | socks5://host:port:user:pass
+         * Supports: socks5://host:port:user:pass | socks5://user:pass@host:port | socks5://host:port
+         * IMPORTANT: Check host:port:user:pass FIRST — otherwise host:port matches and auth is lost
          */
         fun parseSocks5(proxyString: String): ProxyConfig? {
             val s = proxyString.trim()
             if (!s.startsWith("socks5://")) return null
-            // Format: socks5://host:port (no auth)
-            val noAuthRegex = Regex("socks5://([^:/]+):(\\d+)")
-            val noAuthMatch = noAuthRegex.find(s)
-            if (noAuthMatch != null && !s.contains("@")) {
+            // Format: socks5://host:port:username:password (check FIRST - has 4 parts)
+            val fourPartRegex = Regex("^socks5://([^:]+):(\\d+):([^:]+):(.+)$")
+            val fourMatch = fourPartRegex.find(s)
+            if (fourMatch != null) {
                 return ProxyConfig(
                     type = ProxyType.SOCKS5,
-                    host = noAuthMatch.groupValues[1],
-                    port = noAuthMatch.groupValues[2].toInt()
+                    host = fourMatch.groupValues[1],
+                    port = fourMatch.groupValues[2].toInt(),
+                    username = fourMatch.groupValues[3],
+                    password = fourMatch.groupValues[4]
                 )
             }
             // Format: socks5://username:password@host:port
@@ -60,16 +63,14 @@ class ProxyManager {
                     password = altMatch.groupValues[2]
                 )
             }
-            // Format: socks5://host:port:username:password
-            val regex = Regex("socks5://([^:]+):(\\d+):([^:]+):(.+)")
-            val match = regex.find(s)
-            if (match != null) {
+            // Format: socks5://host:port (no auth, exactly 2 parts)
+            val noAuthRegex = Regex("^socks5://([^:/]+):(\\d+)$")
+            val noAuthMatch = noAuthRegex.find(s)
+            if (noAuthMatch != null) {
                 return ProxyConfig(
                     type = ProxyType.SOCKS5,
-                    host = match.groupValues[1],
-                    port = match.groupValues[2].toInt(),
-                    username = match.groupValues[3],
-                    password = match.groupValues[4]
+                    host = noAuthMatch.groupValues[1],
+                    port = noAuthMatch.groupValues[2].toInt()
                 )
             }
             return null
