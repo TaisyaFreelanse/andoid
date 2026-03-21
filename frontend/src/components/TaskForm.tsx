@@ -124,23 +124,58 @@ const SIMPLE_PARSE_TEMPLATE: ActionBlock[] = [
   { id: uid(), type: 'screenshot', saveName: 'page_result' },
 ];
 
+/** Все вхождения site:example.com / site%3Aexample.com в строке (для вложенных Google URL). */
+function collectSiteDomainsFromText(s: string): string[] {
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(s.replace(/\+/g, ' '));
+    } catch {
+      return s;
+    }
+  })();
+  const out: string[] = [];
+  const reList = [
+    /site:\s*([a-z0-9][a-z0-9.-]*\.[a-z]{2,})/gi,
+    /site%3A([a-z0-9][a-z0-9.-]*\.[a-z]{2,})/gi,
+  ];
+  for (const re of reList) {
+    let m: RegExpExecArray | null;
+    const r = new RegExp(re.source, re.flags);
+    while ((m = r.exec(decoded)) !== null) {
+      out.push(m[1].toLowerCase());
+    }
+  }
+  return out;
+}
+
+function pickBestSiteDomain(candidates: string[]): string | null {
+  const isGoogle = (h: string) =>
+    h === 'google.com' || h.endsWith('.google.com') || h === 'gstatic.com';
+  const nonGoogle = candidates.filter((h) => !isGoogle(h));
+  if (nonGoogle.length > 0) return nonGoogle[nonGoogle.length - 1];
+  return candidates.length > 0 ? candidates[candidates.length - 1] : null;
+}
+
 function cleanDomain(raw: string): string {
   let d = raw.trim();
   if (!d) return d;
 
   try {
     const url = new URL(d.startsWith('http') ? d : `https://${d}`);
+    const hostNorm = url.hostname.replace(/^www\./, '').toLowerCase();
 
-    if (url.hostname === 'www.google.com' || url.hostname === 'google.com') {
+    if (hostNorm === 'google.com') {
       const q = url.searchParams.get('q') || '';
-      const siteMatch = q.match(/site:(.+)/);
-      if (siteMatch) d = siteMatch[1].split(/\s/)[0];
-      else return d.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+      const fromQuery = pickBestSiteDomain(collectSiteDomainsFromText(q));
+      if (fromQuery) d = fromQuery;
+      else return hostNorm;
     } else {
       d = url.hostname;
     }
   } catch {
     d = d.replace(/^https?:\/\//, '');
+    const nested = pickBestSiteDomain(collectSiteDomainsFromText(d));
+    if (nested) return nested.replace(/^www\./, '');
   }
 
   return d.replace(/^www\./, '').split('/')[0].split('?')[0];
