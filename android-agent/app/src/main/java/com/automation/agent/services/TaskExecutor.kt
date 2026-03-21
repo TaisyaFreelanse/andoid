@@ -516,7 +516,24 @@ class TaskExecutor(
         
         return try {
             // Try JavaScript extraction first (more reliable for WebView)
-            val results = extractViaJavaScript(browser, selector, attribute)
+            var results = extractViaJavaScript(browser, selector, attribute)
+            
+            // For ip_address: parse JSON {"ip":"x.x.x.x"} from api.ipify.org?format=json
+            if (saveAs == "ip_address" && results.isNotEmpty()) {
+                val parsed = results.flatMap { text ->
+                    try {
+                        val trimmed = text.trim()
+                        if (trimmed.startsWith("{") && trimmed.contains("ip")) {
+                            val json = org.json.JSONObject(trimmed)
+                            val ip = json.optString("ip", "").takeIf { it.isNotBlank() }
+                            if (ip != null) listOf(ip) else listOf(text)
+                        } else listOf(text)
+                    } catch (e: Exception) {
+                        listOf(text)
+                    }
+                }
+                if (parsed.isNotEmpty()) results = parsed
+            }
             
             Log.d(TAG, "Extracted ${results.size} results for '$saveAs': ${results.take(3)}")
             
@@ -1293,6 +1310,35 @@ class TaskExecutor(
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse JavaScript result: ${e.message}")
             emptyList()
+        }
+        
+        // Fallback for body/pre: JSON/text APIs (e.g. api.ipify.org) often render in pre or minimal DOM
+        if (extracted.isEmpty() && (selector == "body" || selector == "pre")) {
+            Log.d(TAG, "Primary extraction empty for '$selector', trying fallback for JSON/text content")
+            val fallbackScript = """
+                (function() {
+                    try {
+                        var text = (document.body && (document.body.innerText || document.body.textContent)) ||
+                            (document.querySelector('pre') && document.querySelector('pre').innerText) ||
+                            (document.documentElement && document.documentElement.innerText) || '';
+                        return text ? JSON.stringify([text.trim()]) : '[]';
+                    } catch(e) {
+                        return '[]';
+                    }
+                })();
+            """.trimIndent()
+            val fallbackResult = browser.evaluateJavascript(fallbackScript)
+            if (!fallbackResult.isNullOrEmpty() && fallbackResult != "null" && fallbackResult != "[]") {
+                val raw = fallbackResult.trim().removeSurrounding("\"", "\"").replace("\\\"", "\"")
+                val fallbackList = try {
+                    val arr = org.json.JSONArray(raw)
+                    (0 until arr.length()).mapNotNull { i -> arr.optString(i, "").takeIf { it.isNotBlank() } }
+                } catch (e: Exception) {
+                    listOf(raw.removeSurrounding("[", "]").trim().removeSurrounding("\"", "\""))
+                        .filter { it.isNotBlank() }
+                }
+                if (fallbackList.isNotEmpty()) return fallbackList
+            }
         }
         
         // If no results found and selector is for iframe, try to find all iframes as fallback
