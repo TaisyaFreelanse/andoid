@@ -1953,12 +1953,17 @@ class ControllerService : LifecycleService() {
             )
         } ?: emptyList()
         
+        val proxyRaw = task.config?.get("proxy")
+        val proxy = when (proxyRaw) {
+            is String -> if (proxyRaw.isNotBlank()) proxyRaw else null
+            else -> proxyRaw?.toString()?.takeIf { it.isNotBlank() }
+        }
         return TaskExecutor.TaskConfig(
             id = task.id,
             name = task.name,
             type = task.type,
             browser = task.config?.get("browser") as? String ?: "webview",
-            proxy = task.config?.get("proxy") as? String,
+            proxy = proxy,
             steps = steps,
             maxRetries = task.config?.get("maxRetries") as? Int ?: 3,
             continueOnError = task.config?.get("continueOnError") as? Boolean ?: false

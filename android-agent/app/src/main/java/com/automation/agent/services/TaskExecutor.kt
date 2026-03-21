@@ -138,9 +138,13 @@ class TaskExecutor(
             // Update task status to "running"
             apiClient.updateTaskStatus(task.id, "running")
             
-            // Apply uniqueness (proxy, timezone, geolocation, language) if proxy is set
-            if (task.proxy != null && task.proxy != "none") {
-                applyUniqueness(task.proxy)
+            // Apply or clear proxy: must clear when task has no proxy, else previous task's proxy persists
+            if (task.proxy != null && task.proxy!!.isNotBlank() && task.proxy != "none") {
+                applyUniqueness(task.proxy!!)
+            } else {
+                proxyManager.clearProxies()
+                socksProxyManager?.clearProxy()
+                Log.i(TAG, "Proxy cleared (task has no proxy)")
             }
             
             // Initialize browser
