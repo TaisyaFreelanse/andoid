@@ -501,6 +501,28 @@ class TaskExecutor(
         }
     }
 
+    /** Parse ip from JSON {"ip":"x.x.x.x"} or escaped variants; regex fallback. Returns list with single IP or null. */
+    private fun parseIpFromJsonOrText(text: String): List<String>? {
+        var t = text.trim()
+        if (t.isEmpty()) return null
+        // Plain IP (api.ipify.org without format=json)
+        if (t.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))) return listOf(t)
+        if (!t.contains("ip")) return null
+        // Unescape common over-escaping (\\\\\" -> ")
+        var unescaped = t.replace("\\\\\"", "\"").replace("\\\\", "\\")
+        for (attempt in listOf(unescaped, t)) {
+            try {
+                val json = org.json.JSONObject(attempt)
+                val ip = json.optString("ip", "").takeIf { it.isNotBlank() }
+                if (ip != null) return listOf(ip)
+            } catch (_: Exception) { }
+        }
+        // Regex: "ip":"90.14.98.189"
+        Regex("""["']ip["']\s*:\s*["']([^"']+)["']""").find(t)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }?.let { return listOf(it) }
+        Regex("""\\\\"ip\\\\":\\\\"([^\\]+)\\\\"""").find(t)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }?.let { return listOf(it) }
+        return null
+    }
+
     /**
      * Extract data from page
      */
@@ -521,16 +543,7 @@ class TaskExecutor(
             // For ip_address: parse JSON {"ip":"x.x.x.x"} from api.ipify.org?format=json
             if (saveAs == "ip_address" && results.isNotEmpty()) {
                 val parsed = results.flatMap { text ->
-                    try {
-                        val trimmed = text.trim()
-                        if (trimmed.startsWith("{") && trimmed.contains("ip")) {
-                            val json = org.json.JSONObject(trimmed)
-                            val ip = json.optString("ip", "").takeIf { it.isNotBlank() }
-                            if (ip != null) listOf(ip) else listOf(text)
-                        } else listOf(text)
-                    } catch (e: Exception) {
-                        listOf(text)
-                    }
+                    parseIpFromJsonOrText(text) ?: listOf(text)
                 }
                 if (parsed.isNotEmpty()) results = parsed
             }
