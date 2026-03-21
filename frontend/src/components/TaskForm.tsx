@@ -125,7 +125,25 @@ const SIMPLE_PARSE_TEMPLATE: ActionBlock[] = [
 ];
 
 function cleanDomain(raw: string): string {
-  return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+  let d = raw.trim();
+  if (!d) return d;
+
+  try {
+    const url = new URL(d.startsWith('http') ? d : `https://${d}`);
+
+    if (url.hostname === 'www.google.com' || url.hostname === 'google.com') {
+      const q = url.searchParams.get('q') || '';
+      const siteMatch = q.match(/site:(.+)/);
+      if (siteMatch) d = siteMatch[1].split(/\s/)[0];
+      else return d.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+    } else {
+      d = url.hostname;
+    }
+  } catch {
+    d = d.replace(/^https?:\/\//, '');
+  }
+
+  return d.replace(/^www\./, '').split('/')[0].split('?')[0];
 }
 
 const AD_SELECTORS = "a[href*='adurl'], a[href*='googleads'], a[href*='doubleclick'], iframe[src*='googleads'], iframe[src*='doubleclick']";
