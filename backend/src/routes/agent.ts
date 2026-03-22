@@ -133,10 +133,10 @@ export async function agentRoutes(fastify: FastifyInstance) {
     });
 
    
-    // Найти задачи для этого устройства со статусом pending или assigned
+    // 1) Найти задачи, уже назначенные этому устройству
     logger.info({ deviceId, status: body.status }, 'Heartbeat received, searching for tasks');
     
-    const tasks = await prisma.task.findMany({
+    let tasks = await prisma.task.findMany({
       where: {
         deviceId: deviceId,
         status: { in: ['pending', 'assigned'] },
@@ -145,13 +145,32 @@ export async function agentRoutes(fastify: FastifyInstance) {
       orderBy: { createdAt: 'asc' },
     });
     
+    // 2) Если нет — взять нераспределённую задачу (deviceId=null) и назначить этому устройству
+    if (tasks.length === 0) {
+      const unassigned = await prisma.task.findFirst({
+        where: {
+          deviceId: null,
+          status: 'pending',
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (unassigned) {
+        await prisma.task.update({
+          where: { id: unassigned.id },
+          data: { deviceId, status: 'assigned', startedAt: new Date() },
+        });
+        tasks = [await prisma.task.findUniqueOrThrow({ where: { id: unassigned.id } })];
+        logger.info({ deviceId, taskId: unassigned.id }, 'Assigned unassigned task to device');
+      }
+    }
+    
     logger.info({ deviceId, tasksFound: tasks.length, taskIds: tasks.map(t => t.id) }, 'Tasks found for device');
     
     if (tasks.length > 0) {
       broadcastLog(`📋 Задач для устройства: ${tasks.length} (${tasks.map(t => t.name).join(', ')})`, 'info');
     }
 
-    // Если нашли задачу - обновить статус на assigned
+    // Если нашли задачу — убедиться, что статус assigned
     if (tasks.length > 0) {
       await prisma.task.update({
         where: { id: tasks[0].id },
@@ -226,10 +245,28 @@ export async function agentRoutes(fastify: FastifyInstance) {
       return reply.status(401).send({ error: { message: 'Invalid device', code: 'INVALID_CREDENTIALS' } });
     }
 
-    const tasks = await prisma.task.findMany({
+    let tasks = await prisma.task.findMany({
       where: { deviceId, status: { in: ['pending', 'assigned'] } },
       orderBy: { createdAt: 'asc' },
     });
+
+    // Если нет задач — взять нераспределённую и назначить этому устройству
+    if (tasks.length === 0) {
+      const unassigned = await prisma.task.findFirst({
+        where: { deviceId: null, status: 'pending' },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (unassigned) {
+        await prisma.task.update({
+          where: { id: unassigned.id },
+          data: { deviceId, status: 'assigned', startedAt: new Date() },
+        });
+        tasks = await prisma.task.findMany({
+          where: { deviceId, status: { in: ['pending', 'assigned'] } },
+          orderBy: { createdAt: 'asc' },
+        });
+      }
+    }
 
     const result = tasks.map((task) => {
       const configJson = task.configJson as any;
