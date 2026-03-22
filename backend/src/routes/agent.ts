@@ -1023,12 +1023,12 @@ export async function agentRoutes(fastify: FastifyInstance) {
       orderBy: { lastHeartbeat: 'desc' },
       take: 10,
     });
-    const tasks = await prisma.task.findMany({
+    const allTasks = await prisma.task.findMany({
       select: { id: true, name: true, type: true, status: true, deviceId: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
-      take: 20,
+      take: 30,
     });
-    return reply.send({ devices, tasks });
+    return reply.send({ devices, tasks: allTasks });
   });
 
   // Test endpoint for domain checking
