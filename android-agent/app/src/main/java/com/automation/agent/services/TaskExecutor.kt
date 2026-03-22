@@ -147,8 +147,21 @@ class TaskExecutor(
             // Apply or clear proxy: must clear when task has no proxy, else previous task's proxy persists
             if (task.proxy != null && task.proxy!!.isNotBlank() && task.proxy != "none") {
                 val p = task.proxy!!
-                logAndSend("info", TAG, "TASK_PROXY: len=${p.length} prefix=${p.take(40)}...")
-                applyUniqueness(p)
+                logAndSend("info", TAG, "TASK_PROXY: len=${p.length} prefix=${p.take(40)}... type=${task.type}")
+                // Heavy work off Main — avoids ANR / "task never starts". Parsing/screenshot: proxy only (no 2s+geo+1s).
+                withContext(Dispatchers.IO) {
+                    when (task.type.lowercase()) {
+                        "parsing", "screenshot" -> {
+                            logAndSend("info", TAG, "TASK_PROXY: fast path (no geo/uniqueness delays)")
+                            applyProxyCoreOnly(p)
+                        }
+                        else -> {
+                            logAndSend("info", TAG, "TASK_PROXY: full applyUniqueness (geo+locale)")
+                            applyUniqueness(p)
+                        }
+                    }
+                }
+                logAndSend("info", TAG, "TASK_PROXY: apply finished, opening browser")
             } else {
                 proxyManager.clearProxies()
                 socksProxyManager?.clearProxy()
@@ -2498,6 +2511,58 @@ class TaskExecutor(
     fun getCurrentTaskId(): String? = currentTaskId
 
     /**
+     * Parse proxy, OkHttp + SocksProxyManager only (no geo / timezone / delays).
+     * Use for parsing/screenshot so the task starts immediately.
+     */
+    private suspend fun applyProxyCoreOnly(proxyString: String) {
+        val trimmed = proxyString.trim()
+        if (trimmed == "auto" || trimmed.isEmpty()) {
+            logAndSend("info", TAG, "applyProxyCoreOnly: skip (auto/empty)")
+            return
+        }
+        logAndSend("info", TAG, "applyProxyCoreOnly: START len=${trimmed.length}")
+        try {
+            val proxyConfig = when {
+                trimmed.startsWith("socks5://") -> ProxyManager.parseSocks5(trimmed)
+                trimmed.startsWith("http://") || trimmed.startsWith("https://") -> ProxyManager.parseHttp(trimmed)
+                else -> ProxyManager.parse(trimmed)
+            }
+            if (proxyConfig == null) {
+                logAndSend("warn", TAG, "applyProxyCoreOnly: PARSE FAILED")
+                return
+            }
+            proxyManager.clearProxies()
+            proxyManager.addProxy(proxyConfig)
+            apiClient.updateProxy()
+            logAndSend(
+                "info", TAG,
+                "applyProxyCoreOnly: net OK type=${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port}"
+            )
+            val spm = socksProxyManager
+            if (spm != null) {
+                val socksConfig = SocksProxyManager.ProxyConfig(
+                    id = "task_proxy",
+                    type = if (trimmed.startsWith("socks5://")) "socks5" else "http",
+                    host = proxyConfig.host,
+                    port = proxyConfig.port,
+                    username = proxyConfig.username ?: "",
+                    password = proxyConfig.password ?: "",
+                    country = "US",
+                    state = null
+                )
+                val ok = spm.setupProxy(socksConfig)
+                logAndSend("info", TAG, "applyProxyCoreOnly: setupProxy=$ok localPort=${spm.getLocalHttpProxyPort()}")
+            } else {
+                logAndSend("warn", TAG, "applyProxyCoreOnly: no SocksProxyManager")
+            }
+            logAndSend("info", TAG, "applyProxyCoreOnly: END")
+        } catch (e: Exception) {
+            logAndSend("error", TAG, "applyProxyCoreOnly: EX ${e.javaClass.simpleName}: ${e.message}")
+            Log.e(TAG, "applyProxyCoreOnly failed", e)
+        }
+    }
+
+    /**
      * Apply uniqueness settings (proxy, timezone, geolocation, language)
      */
     private suspend fun applyUniqueness(proxyString: String) {
@@ -2510,47 +2575,12 @@ class TaskExecutor(
         logAndSend("info", TAG, "applyUniqueness: START len=${trimmed.length} scheme=${trimmed.substringBefore("://", "(no-scheme)")}")
 
         try {
-            // 1. Parse and apply proxy for HTTP clients (OkHttp)
-            val proxyConfig = when {
-                trimmed.startsWith("socks5://") -> ProxyManager.parseSocks5(trimmed)
-                trimmed.startsWith("http://") || trimmed.startsWith("https://") -> ProxyManager.parseHttp(trimmed)
-                else -> ProxyManager.parse(trimmed)
-            }
+            applyProxyCoreOnly(trimmed)
 
-            if (proxyConfig != null) {
-                proxyManager.clearProxies()
-                proxyManager.addProxy(proxyConfig)
-                apiClient.updateProxy()
-                logAndSend(
-                    "info", TAG,
-                    "applyUniqueness: net proxy OK type=${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port} hasUser=${!proxyConfig.username.isNullOrEmpty()} hasPass=${!proxyConfig.password.isNullOrEmpty()}"
-                )
-            } else {
-                logAndSend("warn", TAG, "applyUniqueness: PARSE FAILED for string len=${trimmed.length}")
+            val proxyConfig = proxyManager.getCurrentProxy()
+            if (proxyConfig == null) {
+                logAndSend("warn", TAG, "applyUniqueness: no proxy after core — abort geo")
                 return
-            }
-
-            // 2. Setup system-wide proxy for WebView via SocksProxyManager (root required)
-            val spm = socksProxyManager
-            if (spm != null && proxyConfig != null) {
-                val socksConfig = SocksProxyManager.ProxyConfig(
-                    id = "task_proxy",
-                    type = if (trimmed.startsWith("socks5://")) "socks5" else "http",
-                    host = proxyConfig.host,
-                    port = proxyConfig.port,
-                    username = proxyConfig.username ?: "",
-                    password = proxyConfig.password ?: "",
-                    country = "US",
-                    state = null
-                )
-                val setupResult = spm.setupProxy(socksConfig)
-                if (setupResult) {
-                    logAndSend("info", TAG, "Proxy setup OK: ${proxyConfig.host}:${proxyConfig.port}, localPort=${spm.getLocalHttpProxyPort()}")
-                } else {
-                    logAndSend("warn", TAG, "Proxy setup FAILED for WebView/ip_address")
-                }
-            } else {
-                logAndSend("warn", TAG, "SocksProxyManager not available, WebView/ip_address will NOT use proxy")
             }
 
             // 3. Get geolocation from proxy IP
