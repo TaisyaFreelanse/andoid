@@ -260,6 +260,16 @@ class TaskExecutor(
             currentTaskId = null
             currentBrowser?.close()
             currentBrowser = null
+
+            withContext(NonCancellable) {
+                try {
+                    socksProxyManager?.clearProxy()
+                    proxyManager.clearProxies()
+                    Log.i(TAG, "Proxy cleared in finally block")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to clear proxy in finally: ${e.message}")
+                }
+            }
         }
     }
 
@@ -2532,6 +2542,15 @@ class TaskExecutor(
                 CoroutineScope(Dispatchers.Main).launch { browser.close() }
             }
             currentBrowser = null
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    socksProxyManager?.clearProxy()
+                    proxyManager.clearProxies()
+                    Log.i(TAG, "Proxy cleared in forceResetIfStuck")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to clear proxy in forceReset: ${e.message}")
+                }
+            }
         }
     }
 
