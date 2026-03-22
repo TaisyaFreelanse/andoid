@@ -82,8 +82,8 @@ model User {
 model Device {
   id           String       @id @default(uuid())
   name         String?      @db.VarChar(100)
-  androidId    String       @unique @map("android_id") @db.VarChar(16)
-  aaid         String?      @db.VarChar(36)
+  androidId    String       @unique @map("android_id") @db.VarChar(64)
+  aaid         String?      @db.VarChar(64)
   ipAddress    String?      @map("ip_address") @db.Inet
   status       DeviceStatus @default(offline)
   lastHeartbeat DateTime?   @map("last_heartbeat")
