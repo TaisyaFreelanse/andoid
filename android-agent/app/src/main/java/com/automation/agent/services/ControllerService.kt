@@ -591,9 +591,9 @@ class ControllerService : LifecycleService() {
         val tasks = apiClient.getTasks(id)
         
         tasks?.let { taskList ->
-            // Filter pending tasks
+            // Filter pending/assigned tasks (agent receives both)
             val newTasks = taskList.filter { task ->
-                task.status == "pending" && !pendingTasks.any { it.id == task.id }
+                (task.status == "pending" || task.status == "assigned") && !pendingTasks.any { it.id == task.id }
             }
             
             // Add to queue (sorted by priority)
@@ -633,6 +633,9 @@ class ControllerService : LifecycleService() {
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to log via LogInterceptor: ${e.message}")
         }
+        
+        // Recover from stale "executing" state (e.g. crash without finally block)
+        taskExecutor.forceResetIfStuck(180_000)
         
         if (taskExecutor.isExecutingTask()) {
             android.util.Log.d(TAG, "Task executor is busy, skipping")
@@ -682,15 +685,19 @@ class ControllerService : LifecycleService() {
             android.util.Log.e(TAG, "Failed to log via LogInterceptor: ${e.message}")
         }
         
-        taskExecutionJob = lifecycleScope.launch {
+        // Run on IO to avoid Main thread blocking - task starts immediately
+        taskExecutionJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
+                android.util.Log.e(TAG, "=== TASK EXECUTION COROUTINE STARTED (IO) ===")
                 LogInterceptor.i(TAG, "=== TASK EXECUTION COROUTINE STARTED ===")
                 LogInterceptor.i(TAG, "Task ID: ${task.id}, Type: ${task.type}, Name: ${task.name}")
                 
-            try {
-                updateNotification("Выполнение задачи: ${task.name} (${task.type})")
-                } catch (e: Exception) {
-                    LogInterceptor.w(TAG, "Failed to update notification: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    try {
+                        updateNotification("Выполнение задачи: ${task.name} (${task.type})")
+                    } catch (e: Exception) {
+                        LogInterceptor.w(TAG, "Failed to update notification: ${e.message}")
+                    }
                 }
                 
                 LogInterceptor.i(TAG, "Task execution coroutine started for: ${task.id}")
@@ -930,7 +937,13 @@ class ControllerService : LifecycleService() {
                     }
                     "surfing", "parsing", "screenshot" -> {
                         // Execute via TaskExecutor with type-specific handling
-                        val taskConfig = convertToTaskConfig(task)
+                        android.util.Log.e(TAG, "=== PARSING/SURFING/SCREENSHOT BRANCH: calling convertToTaskConfig ===")
+                        val taskConfig = try { convertToTaskConfig(task) } catch (e: Exception) {
+                            android.util.Log.e(TAG, "convertToTaskConfig failed: ${e.message}", e)
+                            safeSendLog("error", TAG, "convertToTaskConfig failed: ${e.message}")
+                            throw e
+                        }
+                        android.util.Log.e(TAG, "=== Calling executeTask for ${task.id} ===")
                         safeSendLog("info", TAG, "PROXY: task.proxy=${taskConfig.proxy?.take(30)?.let { "$it..." } ?: "null"} (для ip_address нужен socks5://user:pass@host:port)")
                         val result = taskExecutor.executeTask(taskConfig)
                         

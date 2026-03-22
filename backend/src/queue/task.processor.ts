@@ -49,9 +49,8 @@ export function setupTaskProcessor() {
     }, 'Processing task');
 
     try {
-      
-      await taskService.updateTaskStatus(taskId, 'running');
-
+      // DO NOT set 'running' here — agent will do that when it actually starts.
+      // Agent's heartbeat/getTasks only return tasks with status 'pending' or 'assigned'.
       
       let assignedDeviceId = deviceId;
       if (!assignedDeviceId) {

@@ -106,6 +106,7 @@ class TaskExecutor(
     private val browserSelector = BrowserSelector(context, proxyManager)
     private var currentBrowser: BrowserController? = null
     private val isExecuting = AtomicBoolean(false)
+    @Volatile private var lastExecutingSetTime = 0L
     private val executionResults = ConcurrentHashMap<String, Any>()
     private var currentTaskId: String? = null
     
@@ -133,6 +134,7 @@ class TaskExecutor(
                 error = "Another task is already executing"
             )
         }
+        lastExecutingSetTime = System.currentTimeMillis()
 
         currentTaskId = task.id
         executionResults.clear()
@@ -141,8 +143,14 @@ class TaskExecutor(
         logAndSend("info", TAG, "Starting task: ${task.id} (${task.name})")
         
         try {
-            // Update task status to "running"
-            apiClient.updateTaskStatus(task.id, "running")
+            // Update task status to "running" (with timeout to prevent indefinite hang)
+            try {
+                withTimeoutOrNull(15_000L) {
+                    apiClient.updateTaskStatus(task.id, "running")
+                } ?: logAndSend("warn", TAG, "updateTaskStatus timed out after 15s, continuing")
+            } catch (e: Exception) {
+                logAndSend("warn", TAG, "updateTaskStatus failed: ${e.message}, continuing")
+            }
             
             // Apply or clear proxy: must clear when task has no proxy, else previous task's proxy persists
             if (task.proxy != null && task.proxy!!.isNotBlank() && task.proxy != "none") {
@@ -248,6 +256,7 @@ class TaskExecutor(
             result
         } finally {
             isExecuting.set(false)
+            lastExecutingSetTime = 0L
             currentTaskId = null
             currentBrowser?.close()
             currentBrowser = null
@@ -2491,6 +2500,7 @@ class TaskExecutor(
         if (isExecuting.get()) {
             Log.i(TAG, "Cancelling current task: $currentTaskId")
             isExecuting.set(false)
+            lastExecutingSetTime = 0L
             currentBrowser?.let { browser ->
                 CoroutineScope(Dispatchers.Main).launch {
                     browser.close()
@@ -2504,6 +2514,26 @@ class TaskExecutor(
      * Check if currently executing a task
      */
     fun isExecutingTask(): Boolean = isExecuting.get()
+
+    /**
+     * Force reset if executor has been stuck "executing" for too long (e.g. crash without finally).
+     * Call before starting a new task to recover from stale state.
+     */
+    fun forceResetIfStuck(timeoutMs: Long = 180_000) {
+        if (!isExecuting.get()) return
+        val t = lastExecutingSetTime
+        if (t == 0L) return
+        if (System.currentTimeMillis() - t > timeoutMs) {
+            Log.w(TAG, "Force reset: executor stuck for >${timeoutMs}ms")
+            isExecuting.set(false)
+            lastExecutingSetTime = 0L
+            currentTaskId = null
+            currentBrowser?.let { browser ->
+                CoroutineScope(Dispatchers.Main).launch { browser.close() }
+            }
+            currentBrowser = null
+        }
+    }
 
     /**
      * Get current task ID
