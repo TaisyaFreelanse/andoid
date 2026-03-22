@@ -226,7 +226,12 @@ class TaskExecutor(
             )
             
             // Send result to backend
-            sendResultToBackend(task.id, result)
+            try {
+                withTimeoutOrNull(20_000L) { sendResultToBackend(task.id, result) }
+                    ?: logAndSend("warn", TAG, "sendResultToBackend timed out after 20s")
+            } catch (e: Exception) {
+                logAndSend("warn", TAG, "sendResultToBackend failed: ${e.message}")
+            }
             
             // Update task status
             val finalStatus = when {
@@ -234,7 +239,12 @@ class TaskExecutor(
                 partialSuccess -> "partial"
                 else -> "failed"
             }
-            apiClient.updateTaskStatus(task.id, finalStatus)
+            try {
+                withTimeoutOrNull(15_000L) { apiClient.updateTaskStatus(task.id, finalStatus) }
+                    ?: logAndSend("warn", TAG, "updateTaskStatus($finalStatus) timed out after 15s")
+            } catch (e: Exception) {
+                logAndSend("warn", TAG, "updateTaskStatus($finalStatus) failed: ${e.message}")
+            }
             
             onTaskCompleted?.invoke(task.id, result)
             
@@ -250,7 +260,12 @@ class TaskExecutor(
                 error = e.message ?: "Unknown error"
             )
             
-            apiClient.updateTaskStatus(task.id, "failed")
+            try {
+                withTimeoutOrNull(15_000L) { apiClient.updateTaskStatus(task.id, "failed") }
+                    ?: logAndSend("warn", TAG, "updateTaskStatus(failed) timed out after 15s")
+            } catch (ex: Exception) {
+                logAndSend("warn", TAG, "updateTaskStatus(failed) failed: ${ex.message}")
+            }
             onTaskCompleted?.invoke(task.id, result)
             
             result
