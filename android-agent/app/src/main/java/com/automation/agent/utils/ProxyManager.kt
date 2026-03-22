@@ -530,10 +530,10 @@ class ProxyManager(
             
             stopLocalHttpProxy()
             
-            // Safety net: also wipe any leftover system-wide proxy from older versions
+            // Safety net: delete any leftover system-wide proxy from older versions
             try {
-                rootUtils.setGlobalSetting("http_proxy", ":0")
-                rootUtils.setGlobalSetting("global_http_proxy", ":0")
+                rootUtils.executeCommand("settings delete global http_proxy")
+                rootUtils.executeCommand("settings delete global global_http_proxy")
                 rootUtils.executeCommand("settings delete global http_proxy_host")
                 rootUtils.executeCommand("settings delete global http_proxy_port")
             } catch (_: Exception) {}

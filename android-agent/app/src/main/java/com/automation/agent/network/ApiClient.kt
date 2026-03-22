@@ -51,30 +51,16 @@ class ApiClient(
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-
-        // Add proxy if available
-        proxyManager?.getCurrentProxy()?.let { proxy ->
-            builder.proxy(proxyManager.createJavaProxy(proxy))
-            
-            // Add proxy authentication if needed
-            if (proxy.username != null && proxy.password != null) {
-                builder.proxyAuthenticator { _, response ->
-                    val credential = Credentials.basic(proxy.username, proxy.password)
-                    response.request.newBuilder()
-                        .header("Proxy-Authorization", credential)
-                        .build()
-                }
-            }
-        }
+            .proxy(java.net.Proxy.NO_PROXY)
 
         return builder.build()
     }
 
     /**
-     * Update proxy and rebuild client
+     * No-op: API calls always go direct, never through task proxy
      */
     fun updateProxy() {
-        client = buildClient()
+        // intentionally empty
     }
 
     /**
