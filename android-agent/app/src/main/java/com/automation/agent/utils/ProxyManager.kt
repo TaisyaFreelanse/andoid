@@ -133,19 +133,7 @@ class ProxyManager(
             localHttpProxyPort = localPort
             Log.i(TAG, "Local HTTP proxy started on port $localPort, use 127.0.0.1:$localPort for OkHttp")
             
-            // Java-level SOCKS proxy (affects HttpURLConnection but NOT the whole OS)
-            System.setProperty("socksProxyHost", config.host)
-            System.setProperty("socksProxyPort", config.port.toString())
-            
-            java.net.Authenticator.setDefault(object : java.net.Authenticator() {
-                override fun getPasswordAuthentication(): java.net.PasswordAuthentication? {
-                    return if (requestingHost == config.host) {
-                        java.net.PasswordAuthentication(config.username, config.password.toCharArray())
-                    } else null
-                }
-            })
-            
-            Log.i(TAG, "SOCKS5 proxy configured (app-level only, no system-wide settings)")
+            Log.i(TAG, "SOCKS5 proxy configured (local proxy only, no global system properties)")
             
             // Detect location based on state
             if (config.state != null) {
