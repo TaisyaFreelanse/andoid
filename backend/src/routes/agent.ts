@@ -1016,6 +1016,21 @@ export async function agentRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true });
   });
 
+  // DEBUG: temporary diagnostic endpoint — shows devices and tasks state
+  fastify.get('/debug/state', async (_request: FastifyRequest, reply: FastifyReply) => {
+    const devices = await prisma.device.findMany({
+      select: { id: true, name: true, androidId: true, status: true, lastHeartbeat: true },
+      orderBy: { lastHeartbeat: 'desc' },
+      take: 10,
+    });
+    const tasks = await prisma.task.findMany({
+      select: { id: true, name: true, type: true, status: true, deviceId: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    return reply.send({ devices, tasks });
+  });
+
   // Test endpoint for domain checking
   fastify.post('/test/domain-check', async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as { domain?: string; domains?: string[] };
