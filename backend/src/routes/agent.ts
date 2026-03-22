@@ -8,91 +8,73 @@ import { broadcastLog } from './logs';
 import { domainCheckerService } from '../services/domain-checker.service';
 
 export async function agentRoutes(fastify: FastifyInstance) {
+
+  // Simple connectivity check — open in phone browser to verify network
+  fastify.get('/ping', async (_request: FastifyRequest, reply: FastifyReply) => {
+    return reply.send({ ok: true, timestamp: new Date().toISOString(), message: 'Backend is reachable' });
+  });
   
-  fastify.post('/register', async (request: FastifyRequest, _reply: FastifyReply) => {
-    // Log RAW request body BEFORE parsing to see what actually comes from client
-    logger.info({
-      rawBody: request.body,
-      rawBodyKeys: request.body ? Object.keys(request.body as object) : [],
-    }, 'Device registration - RAW request body (before parsing)');
+  fastify.post('/register', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      broadcastLog(`📡 Registration attempt from ${(request.ip || 'unknown')}`, 'info');
 
-    const body = registerDeviceSchema.parse(request.body);
-    const existingDeviceId = body.existingDeviceId;
-    const isRooted = body.isRooted;
-    const rootCheckDetails = body.rootCheckDetails;
-    const rootCheckMethods = body.rootCheckMethods;
+      const body = registerDeviceSchema.parse(request.body);
+      const existingDeviceId = body.existingDeviceId;
+      const isRooted = body.isRooted;
 
-    // Log root status with detailed information for debugging
-    logger.info({
-      androidId: body.androidId,
-      isRooted: isRooted,
-      existingDeviceId: existingDeviceId,
-      rootCheckDetails: rootCheckDetails,
-      rootCheckMethods: rootCheckMethods,
-      parsedBody: body, // Log parsed body after validation
-      rawBody: request.body, // Log raw body for comparison
-    }, 'Device registration request - Root check with details');
+      logger.info({
+        androidId: body.androidId,
+        isRooted,
+        existingDeviceId,
+        aaidLen: body.aaid?.length,
+      }, 'Device registration request');
 
-    let device = null;
-    
-    // First, try to find by existingDeviceId (for re-registration after reinstall)
-    if (existingDeviceId) {
-      device = await prisma.device.findUnique({
-        where: { id: existingDeviceId },
-      });
+      let device = null;
+      
+      if (existingDeviceId) {
+        device = await prisma.device.findUnique({ where: { id: existingDeviceId } });
+      }
+      
+      if (!device) {
+        device = await prisma.device.findUnique({ where: { androidId: body.androidId } });
+      }
+
+      if (device) {
+        device = await prisma.device.update({
+          where: { id: device.id },
+          data: {
+            androidId: body.androidId,
+            aaid: body.aaid || null,
+            browserType: body.browserType,
+            status: 'online',
+            lastHeartbeat: new Date(),
+          },
+        });
+        const rootStatus = isRooted ? '✓ Root' : '✗ No root';
+        broadcastLog(`📱 Устройство переподключено: ${device.name || device.androidId} (${rootStatus})`, 'info');
+      } else {
+        device = await prisma.device.create({
+          data: {
+            androidId: body.androidId,
+            aaid: body.aaid || null,
+            browserType: body.browserType,
+            agentToken: randomUUID(),
+            status: 'online',
+            lastHeartbeat: new Date(),
+          },
+        });
+        const rootStatus = isRooted ? '✓ Root' : '✗ No root';
+        broadcastLog(`📱 Новое устройство: ${device.name || device.androidId} (${rootStatus})`, 'info');
+      }
+
+      return { deviceId: device.id, agentToken: device.agentToken };
+    } catch (error: any) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const code = (error as any)?.code || 'UNKNOWN';
+      logger.error({ error: msg, code, body: request.body }, 'Registration FAILED');
+      broadcastLog(`❌ Registration FAILED: [${code}] ${msg.substring(0, 200)}`, 'error');
+      return reply.status(500).send({ error: { message: msg, code } });
     }
-    
-    // If not found by existingDeviceId, try by androidId
-    if (!device) {
-      device = await prisma.device.findUnique({
-        where: { androidId: body.androidId },
-      });
-    }
-
-    if (device) {
-      // Update existing device
-      device = await prisma.device.update({
-        where: { id: device.id },
-        data: {
-          androidId: body.androidId, // Update androidId in case it changed
-          aaid: body.aaid,
-          browserType: body.browserType,
-          status: 'online',
-          lastHeartbeat: new Date(),
-        },
-      });
-      logger.info({ 
-        deviceId: device.id, 
-        androidId: device.androidId,
-        isRooted: isRooted,
-      }, 'Device re-registered');
-      const rootStatus = isRooted ? '✓ Root доступен' : '✗ Root недоступен';
-      broadcastLog(`📱 Устройство переподключено: ${device.name || device.androidId} (${rootStatus})`, 'info');
-    } else {
-      // Create new device
-      device = await prisma.device.create({
-        data: {
-          androidId: body.androidId,
-          aaid: body.aaid,
-          browserType: body.browserType,
-          agentToken: randomUUID(),
-          status: 'online',
-          lastHeartbeat: new Date(),
-        },
-      });
-      logger.info({ 
-        deviceId: device.id, 
-        androidId: device.androidId,
-        isRooted: isRooted,
-      }, 'New device registered');
-      const rootStatus = isRooted ? '✓ Root доступен' : '✗ Root недоступен';
-      broadcastLog(`📱 Новое устройство: ${device.name || device.androidId} (${rootStatus})`, 'info');
-    }
-
-    return {
-      deviceId: device.id,
-      agentToken: device.agentToken,
-    };
   });
 
   
