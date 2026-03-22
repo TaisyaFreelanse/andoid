@@ -131,39 +131,12 @@ class ProxyManager(
                 return@withContext false
             }
             localHttpProxyPort = localPort
-            Log.i(TAG, "Local HTTP proxy started on port $localPort")
+            Log.i(TAG, "Local HTTP proxy started on port $localPort, use 127.0.0.1:$localPort for OkHttp")
             
-            // Step 2: Set system-wide HTTP proxy via root (for WebView and all apps)
-            val proxyHost = "127.0.0.1"
-            val proxyPort = localPort
-            val proxySetting = "$proxyHost:$proxyPort"
-            
-            // Set global HTTP proxy via root (multiple settings for compatibility)
-            val success1 = rootUtils.setGlobalSetting("http_proxy", proxySetting)
-            val success2 = rootUtils.setGlobalSetting("global_http_proxy", proxySetting)
-            val success3 = rootUtils.setGlobalSetting("http_proxy_host", proxyHost)
-            val success4 = rootUtils.setGlobalSetting("http_proxy_port", proxyPort.toString())
-            
-            if (success1 || success2) {
-                Log.i(TAG, "System-wide HTTP proxy set: $proxySetting (http_proxy: $success1, global_http_proxy: $success2, host: $success3, port: $success4)")
-            } else {
-                Log.w(TAG, "Failed to set system-wide HTTP proxy via root")
-            }
-            
-            // Verify proxy setting
-            delay(500)
-            val verifyProxy = rootUtils.getGlobalSetting("http_proxy")
-            if (verifyProxy == proxySetting) {
-                Log.i(TAG, "✓ Proxy setting verified: $verifyProxy")
-            } else {
-                Log.w(TAG, "⚠ Proxy setting verification failed. Expected: $proxySetting, Got: $verifyProxy")
-            }
-            
-            // Store SOCKS5 proxy for Java networking (fallback)
+            // Java-level SOCKS proxy (affects HttpURLConnection but NOT the whole OS)
             System.setProperty("socksProxyHost", config.host)
             System.setProperty("socksProxyPort", config.port.toString())
             
-            // Set SOCKS authentication
             java.net.Authenticator.setDefault(object : java.net.Authenticator() {
                 override fun getPasswordAuthentication(): java.net.PasswordAuthentication? {
                     return if (requestingHost == config.host) {
@@ -172,7 +145,7 @@ class ProxyManager(
                 }
             })
             
-            Log.i(TAG, "SOCKS5 proxy configured with system-wide HTTP proxy support")
+            Log.i(TAG, "SOCKS5 proxy configured (app-level only, no system-wide settings)")
             
             // Detect location based on state
             if (config.state != null) {
@@ -561,27 +534,28 @@ class ProxyManager(
     fun getLocalHttpProxyPort(): Int? = localHttpProxyPort
     
     /**
-     * Clear proxy settings (app-level and system-wide)
+     * Clear proxy settings (app-level only)
      */
     suspend fun clearProxy(): Boolean = withContext(Dispatchers.IO) {
         try {
             Log.i(TAG, "Clearing proxy settings...")
             
-            // Stop local HTTP proxy
             stopLocalHttpProxy()
             
-            // Clear system-wide HTTP proxy via root
-            rootUtils.setGlobalSetting("http_proxy", "")
-            rootUtils.setGlobalSetting("global_http_proxy", "")
+            // Safety net: also wipe any leftover system-wide proxy from older versions
+            try {
+                rootUtils.setGlobalSetting("http_proxy", ":0")
+                rootUtils.setGlobalSetting("global_http_proxy", ":0")
+                rootUtils.executeCommand("settings delete global http_proxy_host")
+                rootUtils.executeCommand("settings delete global http_proxy_port")
+            } catch (_: Exception) {}
             
             currentProxy = null
             proxyLocation = null
             
-            // Clear Java SOCKS proxy properties
             System.clearProperty("socksProxyHost")
             System.clearProperty("socksProxyPort")
             
-            // Reset authenticator
             java.net.Authenticator.setDefault(null)
             
             Log.i(TAG, "Proxy settings cleared")
