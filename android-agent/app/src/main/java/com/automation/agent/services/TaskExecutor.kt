@@ -14,12 +14,18 @@ import com.automation.agent.browser.BrowserSelector
 import com.automation.agent.browser.WebViewController
 import com.automation.agent.network.ApiClient
 import com.automation.agent.network.ProxyManager
+import com.automation.agent.network.Socks5SocketFactory
 import com.automation.agent.services.UniquenessService
 import com.automation.agent.utils.ProxyManager as SocksProxyManager
 import com.automation.agent.utils.GeoLocationHelper
 import com.automation.agent.utils.LogSender
 import com.automation.agent.utils.RootUtils
 import kotlinx.coroutines.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -140,7 +146,9 @@ class TaskExecutor(
             
             // Apply or clear proxy: must clear when task has no proxy, else previous task's proxy persists
             if (task.proxy != null && task.proxy!!.isNotBlank() && task.proxy != "none") {
-                applyUniqueness(task.proxy!!)
+                val p = task.proxy!!
+                logAndSend("info", TAG, "TASK_PROXY: len=${p.length} prefix=${p.take(40)}...")
+                applyUniqueness(p)
             } else {
                 proxyManager.clearProxies()
                 socksProxyManager?.clearProxy()
@@ -527,6 +535,33 @@ class TaskExecutor(
         return null
     }
 
+    /** Fetch IP via local HTTP proxy (127.0.0.1:port) — tunnels SOCKS5 with auth. */
+    private fun fetchIpViaHttpProxy(host: String, port: Int): String? {
+        return try {
+            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(host, port))
+            val client = OkHttpClient.Builder()
+                .proxy(proxy)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+            val request = Request.Builder().url("https://api.ipify.org?format=json").build()
+            client.newCall(request).execute().use { resp ->
+                val code = resp.code
+                val body = resp.body?.string()
+                logAndSend("info", TAG, "fetchIpViaHttpProxy: HTTP $code bodyLen=${body?.length ?: 0}")
+                if (!resp.isSuccessful) {
+                    logAndSend("warn", TAG, "fetchIpViaHttpProxy: non-success body=${body?.take(200)}")
+                }
+                if (body.isNullOrBlank()) return null
+                parseIpFromJsonOrText(body)?.firstOrNull()
+            }
+        } catch (e: Exception) {
+            logAndSend("warn", TAG, "fetchIpViaHttpProxy EX: ${e.javaClass.simpleName}: ${e.message}")
+            Log.w(TAG, "fetchIpViaHttpProxy failed: ${e.message}", e)
+            null
+        }
+    }
+
     /**
      * Extract data from page
      */
@@ -539,28 +574,119 @@ class TaskExecutor(
         val multiple = step.config["multiple"] as? Boolean ?: true
         
         Log.d(TAG, "Extracting data: selector='$selector', attribute='$attribute', saveAs='$saveAs'")
+        if (saveAs == "ip_address") {
+            logAndSend("info", TAG, "EXTRACT ip_address: step=extract selector=$selector")
+        }
         
         return try {
             var results: List<String>
-            // For ip_address: prefer OkHttp via proxy (works without root; WebView needs root for system proxy)
+            // For ip_address: prefer via proxy. Try multiple methods (Java SOCKS5, local HTTP proxy, OkHttp).
             if (saveAs == "ip_address") {
-                val proxy = proxyManager.getCurrentProxy()
-                if (proxy != null) {
-                    val ipViaProxy = withContext(Dispatchers.IO) {
-                        try {
-                            proxyManager.getCurrentIp(proxy)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "OkHttp proxy IP fetch failed: ${e.message}")
-                            null
+                val socksTrace = Socks5SocketFactory.Trace { msg -> logAndSend("info", TAG, msg) }
+                val ipViaProxy = withContext(Dispatchers.IO) {
+                    try {
+                        var ip: String? = null
+                        val spm = socksProxyManager
+                        var socksProxy = spm?.getCurrentProxy()
+                        var localPort = spm?.getLocalHttpProxyPort()
+                        // If SocksProxyManager exists but proxy not set — applyUniqueness may have failed. Setup now from network proxy.
+                        if (spm != null && socksProxy == null) {
+                            val netProxy = proxyManager.getCurrentProxy()
+                            if (netProxy != null && netProxy.type == ProxyManager.ProxyType.SOCKS5) {
+                                logAndSend("info", TAG, "ip_address: SocksProxyManager not configured, setting up from network proxy ${netProxy.host}:${netProxy.port}")
+                                val socksConfig = SocksProxyManager.ProxyConfig(
+                                    id = "ip_check",
+                                    type = "socks5",
+                                    host = netProxy.host,
+                                    port = netProxy.port,
+                                    username = netProxy.username ?: "",
+                                    password = netProxy.password ?: "",
+                                    country = "US",
+                                    state = null
+                                )
+                                if (spm.setupProxy(socksConfig)) {
+                                    socksProxy = spm.getCurrentProxy()
+                                    localPort = spm.getLocalHttpProxyPort()
+                                    logAndSend("info", TAG, "ip_address: setupProxy OK, socksProxy=${socksProxy != null}, localPort=$localPort")
+                                } else {
+                                    logAndSend("warn", TAG, "ip_address: setupProxy failed")
+                                }
+                            } else {
+                                val np = proxyManager.getCurrentProxy()
+                                logAndSend("warn", TAG, "ip_address: skip setupProxy netProxy=${np != null} type=${np?.type} (need SOCKS5)")
+                            }
                         }
+                        logAndSend("info", TAG, "ip_address: spm=${spm != null}, socksProxy=${socksProxy != null}, localPort=$localPort netHas=${proxyManager.getCurrentProxy() != null}")
+                        // 1. Socks5SocketFactory — manual SOCKS5 handshake (works on Android where JVM SOCKS auth fails)
+                        if (ip == null) {
+                            val netProxy = proxyManager.getCurrentProxy()
+                            when {
+                                netProxy == null -> logAndSend("warn", TAG, "ip_address: skip Socks5Factory — network proxy null")
+                                netProxy.type != ProxyManager.ProxyType.SOCKS5 -> logAndSend("warn", TAG, "ip_address: skip Socks5Factory — type=${netProxy.type} not SOCKS5")
+                                netProxy.username.isNullOrEmpty() || netProxy.password.isNullOrEmpty() -> logAndSend(
+                                    "warn", TAG,
+                                    "ip_address: skip Socks5Factory — empty user/pass (userEmpty=${netProxy.username.isNullOrEmpty()} passEmpty=${netProxy.password.isNullOrEmpty()})"
+                                )
+                                else -> {
+                                    logAndSend("info", TAG, "ip_address: trying Socks5SocketFactory.fetchHttpsViaSocks5")
+                                    val raw = Socks5SocketFactory.fetchHttpsViaSocks5(
+                                        netProxy.host, netProxy.port,
+                                        netProxy.username!!, netProxy.password!!,
+                                        "https://api.ipify.org?format=json",
+                                        trace = socksTrace
+                                    )
+                                    if (raw == null) {
+                                        logAndSend("warn", TAG, "ip_address: Socks5Factory returned null body")
+                                    } else {
+                                        val parsed = parseIpFromJsonOrText(raw)?.firstOrNull()
+                                        ip = parsed
+                                        if (ip != null) {
+                                            logAndSend("info", TAG, "ip_address from Socks5SocketFactory: $ip")
+                                        } else {
+                                            logAndSend("warn", TAG, "ip_address: Socks5Factory body OK but parseIp failed rawLen=${raw.length}")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // 2. SocksProxyManager.getCurrentIp — Java URLConnection through SOCKS5+auth
+                        if (ip == null && socksProxy != null && spm != null) {
+                            logAndSend("info", TAG, "ip_address: trying SocksProxyManager.getCurrentIp (${socksProxy.host}:${socksProxy.port})")
+                            ip = spm.getCurrentIp(socksProxy)
+                            if (ip != null) logAndSend("info", TAG, "ip_address from SocksProxyManager: $ip")
+                            else logAndSend("warn", TAG, "ip_address: SocksProxyManager.getCurrentIp returned null")
+                        }
+                        // 3. Local HTTP proxy — OkHttp via 127.0.0.1 (when local proxy is up)
+                        if (ip == null && localPort != null) {
+                            logAndSend("info", TAG, "ip_address: trying fetchIpViaHttpProxy 127.0.0.1:$localPort")
+                            ip = fetchIpViaHttpProxy("127.0.0.1", localPort)
+                            if (ip != null) logAndSend("info", TAG, "ip_address from local proxy: $ip")
+                        }
+                        // 4. Direct OkHttp SOCKS5 (auth may fail)
+                        if (ip == null) {
+                            proxyManager.getCurrentProxy()?.let {
+                                logAndSend("info", TAG, "ip_address: trying proxyManager.getCurrentIp type=${it.type}")
+                                try {
+                                    ip = proxyManager.getCurrentIp(it)
+                                } catch (ex: Exception) {
+                                    logAndSend("warn", TAG, "ip_address: getCurrentIp EX ${ex.javaClass.simpleName}: ${ex.message}")
+                                }
+                                if (ip != null) logAndSend("info", TAG, "ip_address from OkHttp: $ip")
+                            } ?: logAndSend("warn", TAG, "ip_address: skip OkHttp getCurrentIp — no net proxy")
+                        }
+                        ip
+                    } catch (e: Exception) {
+                        val st = e.stackTraceToString().take(900)
+                        logAndSend("error", TAG, "ip_address: FATAL in IO block ${e.javaClass.simpleName}: ${e.message} | $st")
+                        Log.w(TAG, "Proxy IP fetch failed: ${e.message}", e)
+                        null
                     }
-                    if (!ipViaProxy.isNullOrBlank()) {
-                        Log.i(TAG, "ip_address from OkHttp (proxy): $ipViaProxy")
-                        results = listOf(ipViaProxy.trim())
-                    } else {
-                        results = extractViaJavaScript(browser, selector, attribute)
-                    }
+                }
+                if (!ipViaProxy.isNullOrBlank()) {
+                    logAndSend("info", TAG, "ip_address from proxy: $ipViaProxy")
+                    results = listOf(ipViaProxy.trim())
                 } else {
+                    logAndSend("warn", TAG, "ip_address: all proxy methods failed, falling back to WebView (will show real IP)")
                     results = extractViaJavaScript(browser, selector, attribute)
                 }
             } else {
@@ -2377,11 +2503,11 @@ class TaskExecutor(
     private suspend fun applyUniqueness(proxyString: String) {
         val trimmed = proxyString.trim()
         if (trimmed == "auto" || trimmed.isEmpty()) {
-            Log.i(TAG, "Proxy is 'auto' or empty, skipping uniqueness")
+            logAndSend("info", TAG, "applyUniqueness: skip (auto/empty)")
             return
         }
 
-        Log.i(TAG, "Applying uniqueness with proxy: $trimmed")
+        logAndSend("info", TAG, "applyUniqueness: START len=${trimmed.length} scheme=${trimmed.substringBefore("://", "(no-scheme)")}")
 
         try {
             // 1. Parse and apply proxy for HTTP clients (OkHttp)
@@ -2395,9 +2521,12 @@ class TaskExecutor(
                 proxyManager.clearProxies()
                 proxyManager.addProxy(proxyConfig)
                 apiClient.updateProxy()
-                Log.i(TAG, "Network proxy applied: ${proxyConfig.host}:${proxyConfig.port}")
+                logAndSend(
+                    "info", TAG,
+                    "applyUniqueness: net proxy OK type=${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port} hasUser=${!proxyConfig.username.isNullOrEmpty()} hasPass=${!proxyConfig.password.isNullOrEmpty()}"
+                )
             } else {
-                Log.w(TAG, "Failed to parse proxy: $trimmed")
+                logAndSend("warn", TAG, "applyUniqueness: PARSE FAILED for string len=${trimmed.length}")
                 return
             }
 
@@ -2416,12 +2545,12 @@ class TaskExecutor(
                 )
                 val setupResult = spm.setupProxy(socksConfig)
                 if (setupResult) {
-                    Log.i(TAG, "System-wide proxy set for WebView: ${proxyConfig.host}:${proxyConfig.port}")
+                    logAndSend("info", TAG, "Proxy setup OK: ${proxyConfig.host}:${proxyConfig.port}, localPort=${spm.getLocalHttpProxyPort()}")
                 } else {
-                    Log.w(TAG, "Failed to set system-wide proxy for WebView")
+                    logAndSend("warn", TAG, "Proxy setup FAILED for WebView/ip_address")
                 }
             } else {
-                Log.w(TAG, "SocksProxyManager not available, WebView will NOT use proxy")
+                logAndSend("warn", TAG, "SocksProxyManager not available, WebView/ip_address will NOT use proxy")
             }
 
             // 3. Get geolocation from proxy IP
@@ -2430,8 +2559,9 @@ class TaskExecutor(
                 geoLocationHelper.getCurrentIpLocation()
             }
 
+            logAndSend("info", TAG, "applyUniqueness: geo result geoLocation=${geoLocation != null}")
             if (geoLocation != null) {
-                Log.i(TAG, "Proxy geolocation: ${geoLocation.country} (${geoLocation.city}), timezone: ${geoLocation.timezone}")
+                logAndSend("info", TAG, "applyUniqueness: geo OK ${geoLocation.country} ${geoLocation.city} tz=${geoLocation.timezone}")
 
                 // 3. Change timezone
                 if (geoLocation.timezone.isNotEmpty()) {
@@ -2457,7 +2587,7 @@ class TaskExecutor(
                     Log.i(TAG, "Locale changed by country: ${geoLocation.country}")
                 }
             } else {
-                Log.w(TAG, "Could not determine proxy geolocation, using defaults")
+                logAndSend("warn", TAG, "applyUniqueness: geo=null, using US defaults")
                 // Fallback: use US defaults
                 uniquenessService.changeTimezoneByCountry("US")
                 uniquenessService.changeLocationByCountry("US")
@@ -2466,7 +2596,10 @@ class TaskExecutor(
 
             // Wait a bit for settings to apply
             delay(1000)
+            logAndSend("info", TAG, "applyUniqueness: END OK")
         } catch (e: Exception) {
+            val st = e.stackTraceToString().take(1200)
+            logAndSend("error", TAG, "applyUniqueness: EX ${e.javaClass.simpleName}: ${e.message} | $st")
             Log.e(TAG, "Error applying uniqueness: ${e.message}", e)
         }
     }

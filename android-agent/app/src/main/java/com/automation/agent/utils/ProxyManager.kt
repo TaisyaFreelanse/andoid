@@ -553,6 +553,12 @@ class ProxyManager(
      * Get current proxy config
      */
     fun getCurrentProxy(): ProxyConfig? = currentProxy
+
+    /**
+     * Get local HTTP proxy port (tunnels through SOCKS5 with auth).
+     * Use 127.0.0.1:port as HTTP proxy when non-null — works for OkHttp.
+     */
+    fun getLocalHttpProxyPort(): Int? = localHttpProxyPort
     
     /**
      * Clear proxy settings (app-level and system-wide)

@@ -158,6 +158,8 @@ class ControllerService : LifecycleService() {
                 autoLogcatSender?.addFilterTag("ControllerService")
                 autoLogcatSender?.addFilterTag("UniquenessService")
                 autoLogcatSender?.addFilterTag("TaskExecutor")
+                autoLogcatSender?.addFilterTag("Socks5SocketFactory")
+                autoLogcatSender?.addFilterTag("ProxyManager")
                 autoLogcatSender?.addFilterTag("App")
                 autoLogcatSender?.addFilterTag("MainActivity")
                 autoLogcatSender?.addFilterTag("AutoLogcatSender")

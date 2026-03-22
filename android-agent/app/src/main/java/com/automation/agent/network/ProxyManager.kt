@@ -344,9 +344,12 @@ class ProxyManager {
                 .build()
             
             val response = client.newCall(request).execute()
-            response.body?.string()?.trim()
+            val code = response.code
+            val body = response.body?.string()?.trim()
+            Log.i(TAG, "getCurrentIp OkHttp: code=$code bodyLen=${body?.length ?: 0} type=${proxy.type}")
+            body
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to get IP: ${e.message}")
+            Log.e(TAG, "getCurrentIp FAILED type=${proxy.type} ${proxy.host}:${proxy.port} — ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(800)}")
             null
         }
     }
