@@ -19,6 +19,7 @@ import com.automation.agent.network.ProxyManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 
 /**
@@ -42,7 +43,8 @@ class WebViewController(
     companion object {
         private const val TAG = "WebViewController"
         private const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-        private const val PAGE_LOAD_TIMEOUT = 30_000L
+        /** Default cap for waitForPageLoad when caller passes custom timeout; heavy pages need more via proxy */
+        private const val PAGE_LOAD_TIMEOUT = 120_000L
         private const val ELEMENT_WAIT_POLL_INTERVAL = 100L
     }
 
@@ -50,7 +52,10 @@ class WebViewController(
     private val isInitialized = AtomicBoolean(false)
     private val isPageLoading = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
-    
+    /** Retries when Chromium reports main-frame timeout (slow proxy / Google). */
+    private val mainFrameTimeoutRetries = AtomicInteger(0)
+    @Volatile private var lastNavigatedUrlForRetry: String? = null
+
     private var currentUrl: String = ""
     private var pageTitle: String = ""
     private var customUserAgent: String? = null
@@ -182,7 +187,31 @@ class WebViewController(
             ) {
                 super.onReceivedError(view, request, error)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    Log.e(TAG, "WebView error: ${error?.description}")
+                    val desc = error?.description?.toString() ?: ""
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+                        request?.isForMainFrame == true &&
+                        (desc.contains("TIMED_OUT", ignoreCase = true) ||
+                            desc.contains("TIMEOUT", ignoreCase = true) ||
+                            desc.contains("ERR_TIMED", ignoreCase = true) ||
+                            desc.contains("timed out", ignoreCase = true))) {
+                        val retryUrl = lastNavigatedUrlForRetry
+                        if (retryUrl != null && mainFrameTimeoutRetries.incrementAndGet() <= 3) {
+                            Log.w(
+                                TAG,
+                                "Main-frame timeout (${mainFrameTimeoutRetries.get()}/3), retry in 2.5s: $retryUrl — $desc"
+                            )
+                            view?.postDelayed({
+                                try {
+                                    isPageLoading.set(true)
+                                    view.loadUrl(retryUrl)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Retry loadUrl failed: ${e.message}")
+                                }
+                            }, 2500L)
+                            return
+                        }
+                    }
+                    Log.e(TAG, "WebView error: $desc")
                 }
             }
             
@@ -501,6 +530,8 @@ class WebViewController(
         
         withContext(Dispatchers.Main) {
             Log.d(TAG, "Navigating to: $url")
+            lastNavigatedUrlForRetry = url
+            mainFrameTimeoutRetries.set(0)
             isPageLoading.set(true)
             webView?.loadUrl(url)
         }

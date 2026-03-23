@@ -374,15 +374,23 @@ class TaskExecutor(
         }
 
         val targetHost = try { java.net.URL(url).host.removePrefix("www.") } catch (_: Exception) { "" }
+        // Google / heavy pages через SOCKS часто >30s; ipify в проверке прокси быстрый — из‑за этого «проверка ок, задача нет».
+        val isGoogleOrHeavy = url.contains("google.", ignoreCase = true) ||
+            url.contains("gstatic.", ignoreCase = true) ||
+            url.contains("doubleclick.", ignoreCase = true)
 
         return try {
             browser.clearInterceptedUrls()
 
-            val loadTimeout = (step.config["loadTimeout"] as? Number)?.toLong()
+            var loadTimeout = (step.config["loadTimeout"] as? Number)?.toLong()
                 ?: (step.config["timeout"] as? Number)?.toLong()
-                ?: 15000L
+                ?: if (isGoogleOrHeavy) 180_000L else 90_000L
+            if (isGoogleOrHeavy && loadTimeout < 120_000L) {
+                logAndSend("info", TAG, "navigate: raising loadTimeout from ${loadTimeout}ms to 120000ms (google/heavy via proxy)")
+                loadTimeout = 120_000L
+            }
             val waitAfter = (step.config["waitAfter"] as? Number)?.toLong() ?: 3000L
-            val maxAttempts = 3
+            val maxAttempts = if (isGoogleOrHeavy) 5 else 3
 
             var currentUrl = ""
             var confirmed = false
@@ -522,7 +530,8 @@ class TaskExecutor(
             if (href.startsWith("http")) {
                 Log.i(TAG, "Click: navigate to [$idx/$count]: $href")
                 browser.navigate(href)
-                browser.waitForPageLoad(15000)
+                val clickLoadMs = if (href.contains("google.", ignoreCase = true)) 120_000L else 60_000L
+                browser.waitForPageLoad(clickLoadMs)
                 delay(1000)
             } else {
                 Log.i(TAG, "Click: JS click on [$idx/$count], no href")
