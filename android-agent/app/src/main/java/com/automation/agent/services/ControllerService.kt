@@ -501,9 +501,17 @@ class ControllerService : LifecycleService() {
                     }
                     
                     // Add new tasks to queue (accept both "pending" and "assigned" status)
+                    // Important: do not re-queue the task that is currently executing.
+                    // executeNextTask() removes it from pendingTasks, but heartbeat will return it again as status=assigned.
+                    val currentlyExecutingId = taskExecutor.getCurrentTaskId()
                     taskList.forEach { task ->
                         try {
                             Log.d(TAG, "Processing task: id=${task.id}, type=${task.type}, status=${task.status}")
+                        if (currentlyExecutingId != null && task.id == currentlyExecutingId) {
+                            Log.d(TAG, "Skipping currently executing task from heartbeat: ${task.id}")
+                            return@forEach
+                        }
+
                         if (!pendingTasks.any { it.id == task.id }) {
                                 // Accept tasks with "pending" or "assigned" status
                                 if (task.status == "pending" || task.status == "assigned") {
@@ -592,9 +600,12 @@ class ControllerService : LifecycleService() {
         
         tasks?.let { taskList ->
             // Filter pending/assigned tasks (agent receives both)
-            val newTasks = taskList.filter { task ->
-                (task.status == "pending" || task.status == "assigned") && !pendingTasks.any { it.id == task.id }
-            }
+                val currentlyExecutingId = taskExecutor.getCurrentTaskId()
+                val newTasks = taskList.filter { task ->
+                    (task.status == "pending" || task.status == "assigned") &&
+                        !pendingTasks.any { it.id == task.id } &&
+                        (currentlyExecutingId == null || task.id != currentlyExecutingId)
+                }
             
             // Add to queue (sorted by priority)
             pendingTasks.addAll(newTasks.sortedByDescending { it.priority })
