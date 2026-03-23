@@ -133,8 +133,34 @@ class ProxyManager(
             localHttpProxyPort = localPort
             Log.i(TAG, "Local HTTP proxy started on port $localPort, use 127.0.0.1:$localPort for OkHttp")
             
-            Log.i(TAG, "SOCKS5 proxy configured (local proxy only, no global system properties)")
+            // Step 2: Enable system-wide HTTP proxy via root.
+            // WebView uses system proxy settings, so without this it will go "direct",
+            // even if our task can fetch IP via SOCKS5.
+            val proxyHost = "127.0.0.1"
+            val proxyPort = localPort
+            val proxySetting = "$proxyHost:$proxyPort"
+
+            val success1 = rootUtils.setGlobalSetting("http_proxy", proxySetting)
+            val success2 = rootUtils.setGlobalSetting("global_http_proxy", proxySetting)
+            val success3 = rootUtils.setGlobalSetting("http_proxy_host", proxyHost)
+            val success4 = rootUtils.setGlobalSetting("http_proxy_port", proxyPort.toString())
+
+            if (success1 || success2 || success3 || success4) {
+                Log.i(
+                    TAG,
+                    "System-wide HTTP proxy enabled: $proxySetting " +
+                        "(http_proxy:$success1 global_http_proxy:$success2 " +
+                        "host:$success3 port:$success4)"
+                )
+            } else {
+                Log.w(TAG, "Failed to enable system-wide HTTP proxy via root (continuing)")
+            }
+
+            // Safety delay to allow settings propagation
+            delay(250)
             
+            Log.i(TAG, "SOCKS5 proxy configured (system HTTP proxy via local forwarder)")
+
             // Detect location based on state
             if (config.state != null) {
                 val timezone = STATE_TIMEZONE[config.state] ?: "America/New_York"
