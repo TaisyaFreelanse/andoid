@@ -10,8 +10,8 @@ import java.io.*
 import javax.net.ssl.HttpsURLConnection
 
 /**
- * Manages SOCKS5 proxy configuration and geolocation detection.
- * Local HTTP forwarder for app/OkHttp; does not set system-wide proxy (WebView uses SocksProxyManager / device routing).
+ * Manages SOCKS5 proxy configuration and geolocation detection
+ * Now supports system-wide proxy via local HTTP proxy server
  */
 class ProxyManager(
     private val context: Context,
@@ -112,8 +112,11 @@ class ProxyManager(
     }
     
     /**
-     * Setup SOCKS5: starts local HTTP proxy that forwards through SOCKS5 (for OkHttp in automation).
-     * System-wide http_proxy is not enabled here — avoids WebView HTTPS tunnel (CONNECT) issues and API breakage.
+     * Setup SOCKS5 proxy with system-wide support via local HTTP proxy
+     * 
+     * Creates a local HTTP proxy server that forwards traffic through SOCKS5,
+     * then sets system-wide HTTP proxy via root commands.
+     * This ensures WebView and all apps use the proxy correctly.
      */
     suspend fun setupProxy(config: ProxyConfig): Boolean = withContext(Dispatchers.IO) {
         Log.i(TAG, "Setting up SOCKS5 proxy: ${config.host}:${config.port}")
@@ -130,8 +133,49 @@ class ProxyManager(
             localHttpProxyPort = localPort
             Log.i(TAG, "Local HTTP proxy started on port $localPort, use 127.0.0.1:$localPort for OkHttp")
             
-            Log.i(TAG, "SOCKS5 proxy configured (local proxy only, no global system properties)")
-            
+            // Step 2 (safe): Enable system-wide HTTP proxy via root only if local forwarder is working.
+            // Otherwise WebView will go through a dead proxy and you get net::ERR_TIMED_OUT.
+            val proxyHost = "127.0.0.1"
+            val proxyPort = localPort
+            val proxySetting = "$proxyHost:$proxyPort"
+
+            val testOk = try {
+                val testUrl = URL("https://api.ipify.org?format=json")
+                val localProxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(proxyHost, proxyPort))
+                val conn = testUrl.openConnection(localProxy) as HttpsURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                val body = conn.inputStream.bufferedReader().readText()
+                body.contains("\"ip\"")
+            } catch (e: Exception) {
+                Log.w(TAG, "Local proxy test failed (skip system-wide proxy): ${e.javaClass.simpleName}: ${e.message}")
+                false
+            }
+
+            if (testOk) {
+                val success1 = rootUtils.setGlobalSetting("http_proxy", proxySetting)
+                val success2 = rootUtils.setGlobalSetting("global_http_proxy", proxySetting)
+                val success3 = rootUtils.setGlobalSetting("http_proxy_host", proxyHost)
+                val success4 = rootUtils.setGlobalSetting("http_proxy_port", proxyPort.toString())
+
+                if (success1 || success2 || success3 || success4) {
+                    Log.i(
+                        TAG,
+                        "System-wide HTTP proxy enabled: $proxySetting " +
+                            "(http_proxy:$success1 global_http_proxy:$success2 " +
+                            "host:$success3 port:$success4)"
+                    )
+                } else {
+                    Log.w(TAG, "Failed to enable system-wide HTTP proxy via root (continuing)")
+                }
+
+                // Safety delay to allow settings propagation
+                delay(250)
+                Log.i(TAG, "SOCKS5 proxy configured (system HTTP proxy via local forwarder)")
+            } else {
+                Log.w(TAG, "SOCKS5 proxy configured (LOCAL only). System HTTP proxy NOT enabled because local forwarder is not working.")
+            }
+
             // Detect location based on state
             if (config.state != null) {
                 val timezone = STATE_TIMEZONE[config.state] ?: "America/New_York"
